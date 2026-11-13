@@ -1,0 +1,20 @@
+[
+  {
+    "market_price_id": "demo-market-1",
+    "synthetic": true,
+    "item_id": "demo-item-1",
+    "model": "DEMO-100",
+    "specification": "동일 규격 합성 예제",
+    "unit": "개",
+    "currency": "KRW",
+    "tax_included": true,
+    "delivery_included": true,
+    "installation_included": false,
+    "source_id": null,
+    "source_url": null,
+    "seller_name": "가상 판매처",
+    "checked_at": "2026-11-02T09:00:00+09:00",
+    "price": "110000",
+    "availability_note": "합성 예제, 실제 판매처 아님"
+  }
+]

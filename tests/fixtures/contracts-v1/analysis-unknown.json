@@ -1,0 +1,56 @@
+{
+  "contract_version": "1.0",
+  "dataset_version": "synthetic-v1",
+  "record_id": "demo-unknown",
+  "comparison_type": "agency",
+  "synthetic": true,
+  "status": "conditions_unknown",
+  "reasons": [
+    "대상 구매의 세금 포함 여부 불명"
+  ],
+  "target": {
+    "record_id": "demo-unknown",
+    "synthetic": true,
+    "item_id": "demo-item-1",
+    "model": "DEMO-100",
+    "specification": "동일 규격 합성 예제",
+    "unit": "개",
+    "currency": "KRW",
+    "tax_included": null,
+    "delivery_included": true,
+    "installation_included": false,
+    "source_id": null,
+    "source_url": null,
+    "source_record_id": null,
+    "item_name": "예시 물품",
+    "agency_id": "agency-U",
+    "agency_name": "예시기관 U",
+    "purchased_at": "2026-11-01",
+    "quantity": "1",
+    "unit_price": "150000",
+    "price_basis": "합성 예제 단가",
+    "contract_id": "demo-contract-U",
+    "revision": "1",
+    "status": "active",
+    "retrieved_at": "2026-11-13T09:00:00+09:00"
+  },
+  "reference_unit_price": null,
+  "difference": null,
+  "difference_pct": null,
+  "comparison_records": [],
+  "excluded_records": [],
+  "comparison_count": 0,
+  "agency_count": 0,
+  "comparison_period": {
+    "from": "2026-11-01",
+    "to": "2026-11-13"
+  },
+  "method_version": "unit-price-v1",
+  "policy_id": "demo-policy-v1",
+  "evidence_ids": [
+    "demo-unknown"
+  ],
+  "limitations": [
+    "합성 데이터이며 실제 공공기관 분석이 아닙니다."
+  ]
+}

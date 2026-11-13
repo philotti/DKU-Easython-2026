@@ -1,0 +1,13 @@
+{
+  "filters": {
+    "q": null,
+    "agency_id": "agency-A",
+    "item_id": "demo-item-1",
+    "date_from": null,
+    "date_to": null
+  },
+  "mode": "fallback",
+  "warnings": [
+    "합성 응답 예제"
+  ]
+}

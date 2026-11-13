@@ -1,0 +1,2 @@
+# Contract schema validation only; application dependencies are not selected yet.
+jsonschema>=4.18,<5

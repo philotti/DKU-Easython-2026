@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "const": "1.0"
+    },
+    "dataset_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "record_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "comparison_type": {
+      "enum": [
+        "agency",
+        "market"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "cautions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "mode": {
+      "enum": [
+        "ai",
+        "fallback"
+      ]
+    }
+  },
+  "required": [
+    "contract_version",
+    "dataset_version",
+    "record_id",
+    "comparison_type",
+    "summary",
+    "evidence_ids",
+    "cautions",
+    "mode"
+  ],
+  "additionalProperties": false
+}

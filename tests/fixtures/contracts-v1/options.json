@@ -1,0 +1,38 @@
+{
+  "agencies": [
+    {
+      "id": "agency-A",
+      "name": "예시기관 A"
+    },
+    {
+      "id": "agency-B",
+      "name": "예시기관 B"
+    },
+    {
+      "id": "agency-C",
+      "name": "예시기관 C"
+    },
+    {
+      "id": "agency-D",
+      "name": "예시기관 D"
+    },
+    {
+      "id": "agency-U",
+      "name": "예시기관 U"
+    },
+    {
+      "id": "agency-X",
+      "name": "예시기관 X"
+    }
+  ],
+  "items": [
+    {
+      "id": "demo-item-1",
+      "name": "예시 물품"
+    },
+    {
+      "id": "demo-item-2",
+      "name": "다른 규격 예시 물품"
+    }
+  ]
+}

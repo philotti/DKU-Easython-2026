@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "policy_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "agency_period": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "format": "date"
+        },
+        "to": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "additionalProperties": false
+    },
+    "market_period": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "format": "date"
+        },
+        "to": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "additionalProperties": false
+    },
+    "min_peer_records": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "min_peer_agencies": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "quantity_rule": {
+      "enum": [
+        "equal"
+      ]
+    },
+    "agency_reference": {
+      "enum": [
+        "record_median"
+      ]
+    },
+    "market_reference": {
+      "enum": [
+        "median"
+      ]
+    },
+    "conditions_rule": {
+      "enum": [
+        "known_equal"
+      ]
+    }
+  },
+  "required": [
+    "policy_id",
+    "agency_period",
+    "market_period",
+    "min_peer_records",
+    "min_peer_agencies",
+    "quantity_rule",
+    "agency_reference",
+    "market_reference",
+    "conditions_rule"
+  ],
+  "additionalProperties": false
+}

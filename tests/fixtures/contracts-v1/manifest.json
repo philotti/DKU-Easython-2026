@@ -1,0 +1,17 @@
+{
+  "purchases.json": "purchases.schema.json",
+  "market-prices.json": "market-prices.schema.json",
+  "policy.json": "policy.schema.json",
+  "analysis.json": "analysis.schema.json",
+  "analysis-market.json": "analysis.schema.json",
+  "analysis-insufficient.json": "analysis.schema.json",
+  "analysis-unknown.json": "analysis.schema.json",
+  "analysis-no-market.json": "analysis.schema.json",
+  "analysis-unavailable.json": "analysis.schema.json",
+  "query.json": "query.schema.json",
+  "list.json": "list.schema.json",
+  "list-empty.json": "list.schema.json",
+  "explanation.json": "explanation.schema.json",
+  "error.json": "error.schema.json",
+  "options.json": "options.schema.json"
+}

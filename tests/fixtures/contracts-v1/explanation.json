@@ -1,0 +1,17 @@
+{
+  "contract_version": "1.0",
+  "dataset_version": "synthetic-v1",
+  "record_id": "demo-A",
+  "comparison_type": "agency",
+  "summary": "비교 대상과 단가 차이가 있습니다. 계약 조건을 함께 확인하세요.",
+  "evidence_ids": [
+    "demo-A",
+    "demo-B",
+    "demo-C",
+    "demo-D"
+  ],
+  "cautions": [
+    "합성 데이터이며 실제 공공기관 분석이 아닙니다."
+  ],
+  "mode": "fallback"
+}

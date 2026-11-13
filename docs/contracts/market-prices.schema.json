@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "market_price_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "synthetic": {
+        "type": "boolean"
+      },
+      "item_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "model": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "specification": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "unit": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "currency": {
+        "enum": [
+          "KRW"
+        ]
+      },
+      "tax_included": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "delivery_included": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "installation_included": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "source_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "source_url": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https?://"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "seller_name": {
+        "type": "string",
+        "minLength": 1
+      },
+      "checked_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "price": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "availability_note": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "required": [
+      "market_price_id",
+      "synthetic",
+      "item_id",
+      "model",
+      "specification",
+      "unit",
+      "currency",
+      "tax_included",
+      "delivery_included",
+      "installation_included",
+      "source_id",
+      "source_url",
+      "seller_name",
+      "checked_at",
+      "price",
+      "availability_note"
+    ],
+    "additionalProperties": false
+  }
+}

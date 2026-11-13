@@ -1,0 +1,17 @@
+{
+  "policy_id": "demo-policy-v1",
+  "agency_period": {
+    "from": "2026-11-01",
+    "to": "2026-11-13"
+  },
+  "market_period": {
+    "from": "2026-11-01",
+    "to": "2026-11-13"
+  },
+  "min_peer_records": 3,
+  "min_peer_agencies": 3,
+  "quantity_rule": "equal",
+  "agency_reference": "record_median",
+  "market_reference": "median",
+  "conditions_rule": "known_equal"
+}

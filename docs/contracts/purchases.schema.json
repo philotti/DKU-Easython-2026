@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "record_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "synthetic": {
+        "type": "boolean"
+      },
+      "item_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "model": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "specification": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "unit": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "currency": {
+        "enum": [
+          "KRW"
+        ]
+      },
+      "tax_included": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "delivery_included": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "installation_included": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "source_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "source_url": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https?://"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "source_record_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "item_name": {
+        "type": "string",
+        "minLength": 1
+      },
+      "agency_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "agency_name": {
+        "type": "string",
+        "minLength": 1
+      },
+      "purchased_at": {
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "quantity": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "unit_price": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "price_basis": {
+        "type": "string",
+        "minLength": 1
+      },
+      "contract_id": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "revision": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "status": {
+        "enum": [
+          "active",
+          "cancelled",
+          "superseded",
+          "unknown"
+        ]
+      },
+      "retrieved_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "required": [
+      "record_id",
+      "synthetic",
+      "item_id",
+      "model",
+      "specification",
+      "unit",
+      "currency",
+      "tax_included",
+      "delivery_included",
+      "installation_included",
+      "source_id",
+      "source_url",
+      "source_record_id",
+      "item_name",
+      "agency_id",
+      "agency_name",
+      "purchased_at",
+      "quantity",
+      "unit_price",
+      "price_basis",
+      "contract_id",
+      "revision",
+      "status",
+      "retrieved_at"
+    ],
+    "additionalProperties": false
+  }
+}
