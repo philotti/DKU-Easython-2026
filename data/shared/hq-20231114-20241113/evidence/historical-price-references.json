@@ -1,0 +1,156 @@
+{
+  "period": [
+    "2023-11-14",
+    "2024-11-13"
+  ],
+  "scope": "해당 기간에 제조사가 공표한 동일 모델의 국내 출시·판매 안내 사례",
+  "historical_announcements": 2,
+  "distinct_linked_purchases": 3,
+  "purchase_day_confirmed_market_observations": 0,
+  "limits": "판매 기준일은 공지 원문에 있는 게시일이다. 원문 확인일은 각 sources의 retrieved_at에 적었다. 사후 조회한 공식 카탈로그는 조달 품목 사양 대조에 사용했다. 해당 구매일에 실제 지불된 소비자 가격이나 공급 조건의 동등성을 입증하지 못해 구매일 시중가 또는 차액 계산에 사용하지 않는다.",
+  "references": [
+    {
+      "reference_id": "kr-launch:25382186:20231225",
+      "item_id": "25382186",
+      "model": "SM-X516N",
+      "public_name": "Galaxy Tab S9 FE 5G",
+      "specification": "태블릿컴퓨터, 삼성전자, (VN)SM-X516N, OctaCore(2.4GHz, 2GHz)",
+      "published_at": "2023-12-25",
+      "sale_start": "2024-01-03",
+      "expiry_date": null,
+      "publisher": "삼성전자",
+      "seller_name": null,
+      "price_kind": "manufacturer_launch_price",
+      "price": "788700",
+      "identity_evidence": {
+        "procurement_registered": "2024-04-23",
+        "ram_gb": "6",
+        "storage_gb": "128",
+        "manufacturer_listed_network": "5G",
+        "catalog_unit": "대",
+        "basis": "조달청 물품식별번호의 RAM·저장 용량, 모델, 제조사와 삼성전자 모델 지원 페이지의 통신방식 및 저장 사양을 확인했다."
+      },
+      "conditions": "본체 1대 기준 국내 출시 발표가. 같은 계열의 8GB/256GB 제품은 사양이 달라 제외했다. 할인·보상판매·프로모션 혜택은 가격에 합산하지 않았다. 실제 납품일의 동일 가격 적용, 색상·별도 액세서리·금액에 포함된 비용은 확인되지 않았다.",
+      "sources": [
+        {
+          "publisher": "조달청",
+          "url": "https://goods.g2b.go.kr:8053/search/productSearchView.do?goodsIdntfcNo=25382186&goodsClsfcNo=43211509",
+          "response_sha256": "80c830188a16f61b2571162dc752832c8fc298bd10a6c959798c30abc417e216",
+          "retrieved_at": "2026-11-14T15:48:43+09:00"
+        },
+        {
+          "publisher": "삼성전자",
+          "url": "https://www.samsung.com/sec/support/model/SM-X516NZAAKOO/",
+          "response_sha256": "71af69e900482be958fe73a0af0eb6be3e3bf0eff1e57a3e4f9c116e5990802f",
+          "retrieved_at": "2026-11-14T15:48:45+09:00"
+        },
+        {
+          "publisher": "삼성전자 뉴스룸",
+          "url": "https://news.samsung.com/kr/%EC%82%BC%EC%84%B1%EC%A0%84%EC%9E%90-%EB%B3%B4%EB%8F%84%EC%9E%90%EB%A3%8C-%EC%82%BC%EC%84%B1%EC%A0%84%EC%9E%90-%EA%B0%A4%EB%9F%AD%EC%8B%9C-%ED%83%AD-s9-fe%C2%B7%EA%B0%A4%EB%9F%AD%EC%8B%9C",
+          "response_sha256": "27999daddee43c91ab417e2de9f420a2d7e448191fe9ea182443d4b65a5e5c6c",
+          "retrieved_at": "2026-11-14T15:48:44+09:00"
+        }
+      ],
+      "currency": "KRW",
+      "unit": "대",
+      "tax_included": null,
+      "delivery_included": null,
+      "installation_included": null,
+      "comparison_eligible": false,
+      "purchase_date_market_price": null,
+      "purchase_refs": [
+        {
+          "record_id": "pps:6110000:1224819949/00/1",
+          "source_record_id": "1224819949/00/1",
+          "scope": "cities",
+          "agency_id": "6110000",
+          "agency_name": "서울특별시",
+          "purchased_at": "2024-08-06",
+          "source_page": "mrows-6110000-20240801-20240831-001.json",
+          "row_index": 108,
+          "source_response_sha256": "0f2f95f275a8c6ba04ff2be13451419e1636382ce97b520d93885aa8a4b53fa9",
+          "unit": "대",
+          "quantity": "3",
+          "unit_price": "552000",
+          "delivery_terms": "납품장소도"
+        },
+        {
+          "record_id": "pps:6260000:2124365677/00/1",
+          "source_record_id": "2124365677/00/1",
+          "scope": "cities",
+          "agency_id": "6260000",
+          "agency_name": "부산광역시",
+          "purchased_at": "2024-09-26",
+          "source_page": "mrows-6260000-20240901-20240930-001.json",
+          "row_index": 76,
+          "source_response_sha256": "c311f5293020952a21adcbbefb31d0007bf623602272d4203bd040e1341391b6",
+          "unit": "대",
+          "quantity": "2",
+          "unit_price": "552000",
+          "delivery_terms": "납품장소도"
+        }
+      ]
+    },
+    {
+      "reference_id": "kr-store-announcement:25320797:20240118",
+      "item_id": "25320797",
+      "model": "ILCE-9M3",
+      "public_name": "Sony Alpha 9 III",
+      "specification": "디지털카메라, Sony, (TH)ILCE-9M3, 2460만화소",
+      "published_at": "2024-01-18",
+      "sale_start": "2024-01-18",
+      "expiry_date": null,
+      "publisher": "소니코리아",
+      "seller_name": "소니스토어",
+      "price_kind": "seller_announced_price",
+      "price": "7980000",
+      "identity_evidence": {
+        "procurement_registered": "2024-03-05",
+        "catalog_lens": "렌즈미포함",
+        "catalog_unit": "대",
+        "catalog_effective_pixels": "2460만",
+        "catalog_link_to_sonystore": "https://store.sony.co.kr/product-view/115952023",
+        "basis": "조달청의 모델·카메라 바디 규격·유효화소수 및 제조사 스토어 상품번호를 확인했다. 소니코리아가 2,460만 화소 Alpha 9 III, 약칭 A9M3의 스토어 판매가를 공지했다."
+      },
+      "conditions": "당시 소니스토어가 공표한 카메라 가격. 조달 원문 계약명에 촬영카메라와 부속장비가 함께 기재됐고 인도조건은 과업내역에 따름이다. 렌즈·부속장비 및 인도 조건이 조달 품목 단가에 포함됐는지, 구매일에 이 판매가였는지 확인되지 않았다.",
+      "sources": [
+        {
+          "publisher": "조달청",
+          "url": "https://goods.g2b.go.kr:8053/search/productSearchView.do?goodsIdntfcNo=25320797&goodsClsfcNo=45121504",
+          "response_sha256": "9ad1d56717e310807268aeed9a660552ed96f7af913663325a01f614a7cf7f94",
+          "retrieved_at": "2026-11-14T15:50:06+09:00"
+        },
+        {
+          "publisher": "소니코리아 공식 블로그",
+          "url": "https://stylezineblog.com/5197",
+          "response_sha256": "02dd8acf8ce2b18866f160e75d9c678ea49447a163f82211e5925c201777252a",
+          "retrieved_at": "2026-11-14T15:50:26+09:00"
+        }
+      ],
+      "currency": "KRW",
+      "unit": "대",
+      "tax_included": null,
+      "delivery_included": null,
+      "installation_included": null,
+      "comparison_eligible": false,
+      "purchase_date_market_price": null,
+      "purchase_refs": [
+        {
+          "record_id": "pps:6130769:20241008789_1/00/1",
+          "source_record_id": "20241008789_1/00/1",
+          "scope": "provinces",
+          "agency_id": "6130769",
+          "agency_name": "전남광주통합특별시 무안청사",
+          "purchased_at": "2024-10-15",
+          "source_page": "mrows-6130769-20241001-20241031-001.json",
+          "row_index": 188,
+          "source_response_sha256": "608344bbc1dd7ada82429ec168b629c3eb1df322ce69ac99a999088d08525871",
+          "unit": "대",
+          "quantity": "1",
+          "unit_price": "15168560",
+          "delivery_terms": "과업내역에 따름"
+        }
+      ]
+    }
+  ]
+}
