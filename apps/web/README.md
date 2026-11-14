@@ -4,7 +4,7 @@
 
 ## 실행
 
-이전에 `python -m http.server`를 실행한 터미널은 Ctrl+C로 종료합니다. 저장소 루트의 VS Code 터미널에서 실행합니다. 패키지는 현재 설치되어 있으며 다른 컴퓨터에서는 최초 한 번 `npm.cmd --prefix apps/web ci`를 실행합니다.
+이전에 `python -m http.server`를 실행한 터미널은 Ctrl+C로 종료합니다. 저장소 루트의 VS Code 터미널에서 실행합니다. 각 컴퓨터에서 최초 한 번 `npm.cmd --prefix apps/web ci`를 실행합니다.
 
 ```powershell
 npm.cmd --prefix apps/web run dev
@@ -32,7 +32,7 @@ npm.cmd --prefix apps/web run dev
 
 ## 구매 카드 1~3단계 확인
 
-메인 페이지 아래 “구매 카드 미리보기”를 펼치면 기관 간 합성 예제 3건 또는 시중가 예제 1건을 볼 수 있습니다. 정상 비교·자료 부족·조건 확인 필요 상태를 표시합니다. `assets/purchase-examples.json`은 `tests/fixtures/contracts-v1/`의 등록된 분석 응답을 변경 없이 복사한 화면용 묶음이며 원본 파일명이 함께 기록됩니다. 실제 도청 순위와 관계없는 예제입니다.
+메인 페이지 아래 “구매 카드 조회”를 펼치면 기관 간 합성 예제 3건 또는 시중가 예제 1건을 볼 수 있습니다. 정상 비교·자료 부족·조건 확인 필요 상태를 표시합니다. `assets/purchase-examples.json`은 `tests/fixtures/contracts-v1/`의 등록된 분석 응답을 변경 없이 복사한 화면용 묶음이며 원본 파일명이 함께 기록됩니다. 실제 도청 순위와 관계없는 예제입니다.
 
 카드는 데이터의 가격·차액·차이율을 읽어 표시하고 같은 0 기준 축으로 가격 막대를 그립니다. PC 3열·태블릿 2열·모바일 1열이며 사진 대신 물품 아이콘을 사용합니다. 예제 기준일·기간·합성 표시와 카드별 상세 보기를 제공합니다. 현재는 React와 Vite로 실행합니다.
 
@@ -40,7 +40,7 @@ npm.cmd --prefix apps/web run dev
 
 ## 상세·검색·필터 4~5단계
 
-미리보기 기본 모드는 E의 합성 예제 API입니다. API를 실행하고, 이미 실행 중이었다면 변경된 코드를 읽도록 재시작합니다.
+구매 카드의 기본 모드는 E의 실제 시연 구매 자료 API입니다. API에 저장된 18건은 비교 분석 전이므로 차액은 표시되지 않습니다. 합성 분석 예제는 별도 정적 모드에서 확인합니다. API를 실행하고, 이미 실행 중이었다면 변경된 코드를 읽도록 재시작합니다.
 
 ```powershell
 .venv\Scripts\python.exe -m uvicorn budget_transparency.api.server:app --app-dir src --host 127.0.0.1 --port 8000

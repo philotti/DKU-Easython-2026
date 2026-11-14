@@ -36,7 +36,29 @@ jobs:
         run: python scripts/check_data.py
       - name: Test validators
         run: python -m unittest discover -s tests/unit -p 'test_contract_validation.py' -v
-      - name: Test fixture API
+      - name: Test price comparison
+        run: python -m unittest discover -s tests/unit -p 'test_compare.py' -v
+      - name: Test purchase API
         run: python -m unittest discover -s tests/unit -p 'test_fixture_server.py' -v
       - name: Test AI query and explanation
         run: python -m unittest discover -s tests/unit -p 'test_ai_validation.py' -v
+
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install web dependencies
+        run: npm ci --prefix apps/web
+      - name: Test web
+        run: npm test --prefix apps/web
+      - name: Build web
+        run: npm run build --prefix apps/web

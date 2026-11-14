@@ -1,17 +1,20 @@
-"""Check the fixture API without starting a network server."""
+"""Verify real demo data lookup, contract shape, and safe unavailable comparison."""
 import asyncio
 import json
 import sys
 import unittest
 from pathlib import Path
+from urllib.parse import urlencode
+from jsonschema import Draft202012Validator, FormatChecker
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'src'))
-from budget_transparency.api.server import app  # noqa: E402
+from budget_transparency.api.server import app
 
 
-def request(path, query=b''):
+def request(path, params=None):
     messages = []
+    query = urlencode(params or {}).encode()
     scope = {'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1',
              'method': 'GET', 'scheme': 'http', 'path': path, 'raw_path': path.encode(),
              'query_string': query, 'headers': [], 'client': ('127.0.0.1', 12345),
@@ -26,58 +29,62 @@ def request(path, query=b''):
     return status, json.loads(body)
 
 
-class FixtureServerTests(unittest.TestCase):
-    def test_list_matches_detail(self):
+def validate(schema, value):
+    doc = json.loads((ROOT / 'docs/contracts' / (schema + '.schema.json')).read_text())
+    Draft202012Validator(doc, format_checker=FormatChecker()).validate(value)
+
+
+class PurchaseApiTests(unittest.TestCase):
+    def test_real_list_and_detail_match_schema_and_unavailable(self):
         status, listing = request('/api/purchases')
         self.assertEqual(status, 200)
-        self.assertTrue(listing['synthetic'])
-        self.assertEqual(listing['total'], 3)
-        status, detail = request('/api/purchases/demo-A')
+        validate('list', listing)
+        self.assertFalse(listing['synthetic'])
+        self.assertEqual(listing['total'], 18)
+        item = listing['items'][0]
+        self.assertEqual(item['status'], 'unavailable')
+        self.assertIsNone(item['difference'])
+        status, detail = request('/api/purchases/' + item['record_id'])
         self.assertEqual(status, 200)
-        self.assertEqual(next(a for a in listing['items'] if a['record_id'] == 'demo-A'), detail)
-        self.assertEqual(detail['difference'], '30000')
-        self.assertEqual(detail['difference_pct'], '25.00')
+        validate('analysis', detail)
+        self.assertEqual(item, detail)
+        self.assertEqual(detail['policy_id'], 'not-configured')
 
-    def test_unknown_and_invalid_queries(self):
+    def test_search_and_agency_together(self):
+        status, result = request('/api/purchases', {'agency_id': '6410000', 'q': '노트북'})
+        self.assertEqual(status, 200)
+        self.assertEqual(result['total'], 1)
+        self.assertEqual(result['items'][0]['target']['agency_name'], '경기도')
+        self.assertIn('노트북', result['items'][0]['target']['item_name'])
+        _, empty = request('/api/purchases', {'agency_id': '6410000', 'q': '존재하지않는물품'})
+        self.assertEqual((empty['total'], empty['items']), (0, []))
+
+    def test_filters_dates_pagination_and_market(self):
+        _, page = request('/api/purchases', {'page': '2', 'page_size': '2'})
+        self.assertEqual((page['total'], len(page['items'])), (18, 2))
+        _, result = request('/api/purchases', {'date_from': '2026-01-01', 'date_to': '2026-02-01', 'comparison_type': 'market'})
+        self.assertTrue(result['items'])
+        self.assertTrue(all('2026-01-01' <= x['target']['purchased_at'] <= '2026-02-01' for x in result['items']))
+        self.assertIsNone(result['items'][0]['agency_count'])
+        validate('list', result)
+
+    def test_invalid_and_not_found(self):
+        for params in ({'page_size': '101'}, {'date_from': '2026-02-30'},
+                       {'date_from': '2026-03-01', 'date_to': '2026-01-01'},
+                       {'sort': 'difference_pct_desc'}, {'comparison_type': 'other'}, {'bogus': 'x'}):
+            with self.subTest(params=params):
+                status, body = request('/api/purchases', params)
+                self.assertEqual(status, 400)
+                validate('error', body)
         status, body = request('/api/purchases/missing')
-        self.assertEqual((status, body['error']['code']), (404, 'NOT_FOUND'))
-        status, body = request('/api/purchases', b'unknown=test')
-        self.assertEqual((status, body['error']['code']), (400, 'INVALID_REQUEST'))
-
-    def test_search_filters_and_market_detail(self):
-        from urllib.parse import urlencode
-        for params, total in [({'q': 'DEMO-100'}, 2),
-                              ({'q': 'missing'}, 0),
-                              ({'agency_id': 'agency-A', 'status': 'comparable'}, 1),
-                              ({'status': 'conditions_unknown'}, 1),
-                              ({'comparison_type': 'market'}, 1)]:
-            status, body = request('/api/purchases', urlencode(params).encode())
-            self.assertEqual(status, 200)
-            self.assertEqual(body['total'], total, params)
-            for analysis in body['items']:
-                _, detail = request('/api/purchases/' + analysis['record_id'], urlencode({'comparison_type': analysis['comparison_type']}).encode())
-                self.assertEqual(analysis, detail)
-        _, market = request('/api/purchases/demo-A', b'comparison_type=market')
-        self.assertEqual(market['reference_unit_price'], '110000')
-        self.assertEqual(market['comparison_records'][0]['seller_name'], '가상 판매처')
-
-    def test_pagination_sort_validation_and_unchanged_comparison(self):
-        _, listing = request('/api/purchases', b'item_id=demo-item-1&sort=difference_pct_desc')
-        self.assertEqual(listing['items'][0]['record_id'], 'demo-A')
-        self.assertEqual(listing['items'][-1]['difference_pct'], None)
-        _, page = request('/api/purchases', b'page=2&page_size=1')
-        self.assertEqual((page['total'], len(page['items'])), (3, 1))
-        _, filtered = request('/api/purchases', b'agency_id=agency-A')
-        self.assertEqual(filtered['items'][0]['comparison_count'], 3)
-        for query in (b'sort=difference_pct_desc', b'comparison_type=other', b'status=bad', b'page=0', b'page_size=101', b'q=a&q=b', b'date_from=2026-99-99', b'date_from=2026-11-14&date_to=2026-11-01'):
-            status, _ = request('/api/purchases', query)
-            self.assertEqual(status, 400, query)
+        self.assertEqual(status, 404)
+        validate('error', body)
 
     def test_options(self):
         status, body = request('/api/options')
         self.assertEqual(status, 200)
-        self.assertEqual(body['agencies'][0]['id'], 'agency-A')
-
+        validate('options', body)
+        self.assertIn('6410000', [a['id'] for a in body['agencies']])
 
 if __name__ == '__main__':
     unittest.main()
