@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-export default function Drawer({ title, labelledBy, children, onClose }) {
+export default function Drawer({ title, labelledBy, children, onClose, variant = '' }) {
   const ref = useRef(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -10,7 +10,7 @@ export default function Drawer({ title, labelledBy, children, onClose }) {
     dialog.showModal();
     return () => { dialog.close(); if (original?.isConnected) original.focus(); };
   }, []);
-  return <dialog ref={ref} aria-labelledby={labelledBy} onCancel={(event) => { event.preventDefault(); closeRef.current(); }} onClick={(event) => {
+  return <dialog ref={ref} className={variant} aria-labelledby={labelledBy} onCancel={(event) => { event.preventDefault(); closeRef.current(); }} onClick={(event) => {
     if (event.target !== ref.current) return;
     const rect = ref.current.getBoundingClientRect();
     if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) closeRef.current();

@@ -523,6 +523,13 @@ class GeminiCallTests(unittest.TestCase):
         analysis = read("analysis.json")
         self.assertEqual(explain_analysis(analysis, gemini.make_generate(api_key="", model=""))["mode"], "fallback")
 
+    def test_gemini_35_flash_requests_minimal_thinking(self):
+        generate, seen = self.make(model_reply('{"ok": true}'), model='gemini-3.5-flash')
+        generate('지시문', '자료')
+        config = json.loads(seen['request'].data)['generationConfig']
+        self.assertEqual(config['thinkingConfig']['thinkingLevel'], 'minimal')
+        self.assertEqual(config['responseMimeType'], 'application/json')
+
     def test_invalid_model_id_is_rejected(self):
         for model in ("a/b", "x?key=1", "모델"):
             with self.subTest(model=model):

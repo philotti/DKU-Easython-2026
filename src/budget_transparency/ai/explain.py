@@ -77,6 +77,12 @@ def _response(analysis, summary, evidence_ids, cautions, mode):
 
 def fixed_summary(analysis):
     """상태만으로 정하는 고정 요약. 숫자와 원인을 쓰지 않는다."""
+    if analysis.get('_preliminary'):
+        if analysis.get('difference') is None:
+            return '조건 미확인 참고 비교에 필요한 자료가 부족합니다. 구매 내역과 확인 사항을 살펴보세요.'
+        if Decimal(analysis['difference']) == 0:
+            return '참고 기준 단가와 같습니다. 계약 상태와 비용 조건은 확인이 필요합니다.'
+        return '참고 기준 단가와 차이가 있습니다. 계약 상태와 비용 조건은 확인이 필요합니다.'
     if analysis["status"] == "comparable":
         if Decimal(analysis["difference"]) == 0:
             return _SAME_PRICE_SUMMARY

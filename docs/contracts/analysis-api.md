@@ -17,11 +17,11 @@
 ## 목록 쿼리
 
 q(선택, 1~200자): 품목명·모델·기관명에 대한 대소문자 무시 부분 문자열 검색. 공백만이면 조건 없음.
-agency_id, item_id(선택): 내부 ID 정확 일치.
+agency_id, item_id(선택): 내부 ID 정확 일치. 단 `scope:jeonnam-gwangju-muan`은 무안청사의 원본 기관코드 `6460000`과 `6130769`를 함께 조회하는 표시용 범위입니다. 응답에는 원본 코드가 유지됩니다.
 date_from, date_to(선택): YYYY-MM-DD, 구매일 포함 범위. 역전·잘못된 날짜는 400. 날짜 조건이 있으면 날짜 null 레코드 제외.
 comparison_type: agency/market, 기본 agency.
 status: comparable/insufficient_data/conditions_unknown/unavailable, 생략하면 전체.
-sort: purchased_desc(기본)/difference_pct_desc. 차이율 정렬에는 item_id 필수이며 없으면 400. null은 뒤로, 동률은 record_id 오름차순.
+sort: purchased_desc(기본)/difference_pct_desc/preliminary_available_desc. preliminary_available_desc는 참고 비교 가능 기록을 먼저 표시하고 각 그룹 내에서는 구매일 최신순입니다. 차이율 정렬에는 item_id 필수이며 없으면 400. null은 뒤로, 동률은 record_id 오름차순.
 page: 1 이상의 정수, 기본 1. page_size: 1~100 정수, 기본 20. 범위 밖은 400.
 
 필터·정렬 후 페이지를 적용합니다. total은 페이지 전 일치 개수입니다. 없는 페이지는 빈 items. 검색·기관 필터로 분석 비교군을 좁히지 않습니다. 각 대상의 비교군은 전체 데이터와 고정 정책으로 계산합니다. 데이터 버전 안에서 같은 대상·유형은 목록과 상세가 동일해야 합니다.
