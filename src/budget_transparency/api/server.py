@@ -17,7 +17,7 @@ from budget_transparency.ai import gemini
 from budget_transparency.ai.explain import explain_analysis
 from budget_transparency.ai.region_report import region_facts, region_report
 from budget_transparency.analysis.compare import ComparisonEngine, AnalysisConfigurationError
-from budget_transparency.analysis.preliminary import preliminary, preliminary_ranking, preliminary_availability, preliminary_distribution, monthly_purchase_distribution, PreliminaryDataError
+from budget_transparency.analysis.preliminary import preliminary, preliminary_ranking, preliminary_availability, preliminary_distribution, preliminary_examples, monthly_purchase_distribution, PreliminaryDataError
 
 ROOT = Path(__file__).resolve().parents[3]
 DATA_FILE = ROOT / 'data' / 'shared' / 'provinces-20251114-20261113' / 'purchases.json'
@@ -391,6 +391,7 @@ def report(request: Request):
             return error(404, 'NOT_FOUND', '기관 구매 기록을 찾을 수 없습니다.')
         record_ids = {r['record_id'] for r in matching}
         distribution = preliminary_distribution(record_ids)
+        distribution['price_examples'] = preliminary_examples(record_ids)
         coverage_start = date(2025, 11, 14) if agency_id in ('6110000', '6260000', '6300000') else None
         distribution['monthly_purchases'] = monthly_purchase_distribution(record_ids, coverage_start)
         name = '전남광주특별시 무안청사' if agency_id == MUAN_SCOPE else matching[0]['agency_name']

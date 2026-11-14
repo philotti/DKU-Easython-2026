@@ -198,6 +198,22 @@ def preliminary_distribution(record_ids):
             'period': PERIOD}
 
 
+def preliminary_examples(record_ids, limit=3):
+    """Largest positive reference differences, scoped to the selected records."""
+    ranked, _ = _ranking(signature())
+    rows, _, _, _, _ = _load()
+    examples = []
+    for result in ranked:
+        if result['record_id'] not in record_ids or Decimal(result['difference_pct']) <= 0:
+            continue
+        row = rows[result['record_id']]
+        examples.append({**result, 'source_id': row.get('source_id'),
+                         'source_record_id': row.get('source_record_id'), 'unit': row.get('unit')})
+        if len(examples) >= limit:
+            break
+    return examples
+
+
 def monthly_purchase_distribution(record_ids, coverage_from=None):
     rows, _, _, _, _ = _load()
     period_start, period_end = date(2024, 11, 14), date(2026, 11, 13)
