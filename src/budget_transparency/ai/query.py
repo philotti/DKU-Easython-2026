@@ -33,6 +33,7 @@ W_UNMATCHED = "기관·품목 목록에서 찾지 못한 낱말을 검색어로 
 W_NOT_REFLECTED = "질문의 일부 낱말이 조건에 반영되지 않았습니다: {}"
 W_TOO_LONG = "인식하지 못한 내용이 길어 검색어로 사용하지 않았습니다."
 W_MANY_DATES = "날짜가 세 개 이상이라 기간을 해석하지 못했습니다."
+W_SAME_NAME = "‘{name}’ 이름의 {label}이 여러 개라 하나로 정하지 않고 검색어로 사용했습니다. 여러 {label}이 검색될 수 있습니다."
 
 
 def _norm(text):
@@ -45,17 +46,33 @@ def _hits(text, entries):
     return [e for e in entries if _norm(e["name"]) in plain or _norm(e["id"]) in plain]
 
 
-def _pick_one(hits, label, warnings):
-    """여러 개면 고르지 않고 null. '예시 물품'과 '다른 규격 예시 물품'처럼 포함 관계면 긴 이름만 남긴다."""
-    hits = [
+def _candidates(hits):
+    """'예시 물품'과 '다른 규격 예시 물품'처럼 포함 관계면 긴 이름만 남긴다."""
+    return [
         e for e in hits
         if not any(o is not e and _norm(e["name"]) in _norm(o["name"]) and _norm(e["name"]) != _norm(o["name"]) for o in hits)
     ]
-    if len(hits) == 1:
-        return hits[0]["id"]
-    if len(hits) > 1:
-        warnings.append(f"{label} 이름이 여러 개와 일치해 선택하지 않았습니다.")
+
+
+def _shared_name(candidates):
+    """후보가 여러 개인데 이름이 모두 같으면 그 이름. 같은 품목명에 ID가 여러 개인 경우다."""
+    if len(candidates) > 1 and len({_norm(e["name"]) for e in candidates}) == 1:
+        return candidates[0]["name"]
     return None
+
+
+def _pick_one(hits, label, warnings):
+    """(ID, 검색어로 넘길 이름)을 돌려준다. 여러 개면 ID를 임의로 고르지 않는다."""
+    candidates = _candidates(hits)
+    if len(candidates) == 1:
+        return candidates[0]["id"], None
+    name = _shared_name(candidates)
+    if name:
+        warnings.append(W_SAME_NAME.format(name=name, label=label))
+        return None, name
+    if candidates:
+        warnings.append(f"{label} 이름이 여러 개와 일치해 선택하지 않았습니다.")
+    return None, None
 
 
 def _leftover(text, entries, drop_korean_dates=False):
@@ -108,15 +125,18 @@ def _fallback(text, options, warnings):
     if options is None:
         warnings.append(W_NO_OPTIONS)
     agencies, items = _entries(options, "agencies"), _entries(options, "items")
-    filters["agency_id"] = _pick_one(_hits(text, agencies), "기관", warnings)
-    filters["item_id"] = _pick_one(_hits(text, items), "품목", warnings)
+    filters["agency_id"], agency_name = _pick_one(_hits(text, agencies), "기관", warnings)
+    filters["item_id"], item_name = _pick_one(_hits(text, items), "품목", warnings)
     filters["date_from"], filters["date_to"] = _dates(text, warnings)
-    # 인식하지 못한 낱말은 버리지 않고 검색어로 넘겨, 전체 목록을 검색 결과로 오해하지 않게 한다.
+    # 인식하지 못한 낱말과 ID를 하나로 정하지 못한 이름은 버리지 않고 검색어로 넘겨,
+    # 전체 목록을 검색 결과로 오해하지 않게 한다.
     rest = _leftover(text, agencies + items)
-    if rest:
-        if len(rest) <= Q_MAX:
-            filters["q"] = rest
-            warnings.append(W_UNMATCHED.format(rest))
+    query = " ".join(part for part in (agency_name, item_name, rest) if part)
+    if query:
+        if len(query) <= Q_MAX:
+            filters["q"] = query
+            if rest:
+                warnings.append(W_UNMATCHED.format(rest))
         else:
             warnings.append(W_TOO_LONG)
     warnings.append(W_FALLBACK)
@@ -160,11 +180,20 @@ def validate_filters(raw, text, options):
     if not isinstance(value, dict) or set(value) != set(FILTER_KEYS):
         raise ValueError("unexpected keys")
     filters = dict.fromkeys(FILTER_KEYS)
+    shared_names = []
     for key, entries in (("agency_id", _entries(options, "agencies")), ("item_id", _entries(options, "items"))):
+        hits = _hits(text, entries)
+        candidates = _candidates(hits)
+        shared = _shared_name(candidates)
+        if shared:
+            shared_names.append(shared)
         if value[key] is not None:
             # 목록에 있는 ID라도 그 이름이나 ID가 질문에 나오지 않았으면 추측으로 본다.
-            if value[key] not in {e["id"] for e in _hits(text, entries)}:
+            if value[key] not in {e["id"] for e in hits}:
                 raise ValueError(f"{key} not grounded in question")
+            # 같은 이름의 ID가 여러 개면 모델이 하나를 임의로 고른 것이다.
+            if shared and value[key] in {e["id"] for e in candidates}:
+                raise ValueError(f"{key} is ambiguous")
             filters[key] = value[key]
     q = value["q"]
     if q is not None:
@@ -174,6 +203,9 @@ def validate_filters(raw, text, options):
         if _norm(q) not in _norm(text):
             raise ValueError("q not in question")
         filters["q"] = q
+    for name in shared_names:  # ID를 정할 수 없는 이름은 검색어에 남아 있어야 한다
+        if filters["q"] is None or _norm(name) not in _norm(filters["q"]):
+            raise ValueError("ambiguous name dropped")
     filters["date_from"] = _grounded_date(value["date_from"], text, end=False)
     filters["date_to"] = _grounded_date(value["date_to"], text, end=True)
     if filters["date_from"] and filters["date_to"] and filters["date_from"] > filters["date_to"]:
