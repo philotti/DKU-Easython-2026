@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from budget_transparency.ai import prompts  # noqa: E402
-from budget_transparency.ai.explain import explain_analysis  # noqa: E402
+from budget_transparency.ai.explain import available_checks, explain_analysis  # noqa: E402
 from budget_transparency.ai.query import parse_query  # noqa: E402
 
 FIXTURES = ROOT / "tests/fixtures/contracts-v1"
@@ -51,10 +51,7 @@ def failing(error):
     return generate
 
 
-GOOD_EXPLANATION = {
-    "evidence_ids": ["demo-A", "demo-B"],
-    "cautions": ["설치비 포함 여부를 확인하세요.", "세금과 배송비 조건이 같은 기록끼리 비교했는지 확인하세요."],
-}
+GOOD_EXPLANATION = {"evidence_ids": ["demo-A", "demo-B"], "caution_ids": ["installation", "excluded"]}
 
 
 class ExplainFallbackTests(unittest.TestCase):
@@ -95,99 +92,98 @@ class ExplainAiValidationTests(unittest.TestCase):
     def setUp(self):
         self.analysis = read("analysis.json")
 
-    def explain(self, cautions, analysis=None, evidence_ids=None):
+    def assert_fallback(self, generate, analysis=None):
         analysis = analysis or self.analysis
-        response = {"evidence_ids": evidence_ids or [analysis["record_id"]], "cautions": cautions}
-        result = explain_analysis(analysis, fake(response))
-        EXPLANATION.validate(result)
-        return result
-
-    def assert_fallback(self, generate):
-        result = explain_analysis(self.analysis, generate)
+        result = explain_analysis(analysis, generate)
         EXPLANATION.validate(result)
         self.assertEqual(result["mode"], "fallback")
-        self.assertEqual(result, explain_analysis(self.analysis))
+        self.assertEqual(result, explain_analysis(analysis))
+        return result
 
-    def test_valid_response_is_used(self):
+    def test_valid_selection_is_used(self):
         fallback = explain_analysis(self.analysis)
         result = explain_analysis(self.analysis, fake(GOOD_EXPLANATION))
         EXPLANATION.validate(result)
         self.assertEqual(result["mode"], "ai")
         self.assertEqual(result["evidence_ids"], ["demo-A", "demo-B"])
-        for caution in GOOD_EXPLANATION["cautions"]:
-            self.assertIn(caution, result["cautions"])
-        self.assertTrue(any("합성" in c for c in result["cautions"]))
-        # 요약은 모델이 쓰지 않는다. 두 mode가 같은 고정 문장이다.
-        self.assertEqual(result["summary"], fallback["summary"])
+        self.assertEqual(result["summary"], fallback["summary"])  # 요약은 모델이 쓰지 않는다
+        checks = available_checks(self.analysis)
+        self.assertEqual(result["cautions"], fallback["cautions"] + [checks["installation"], checks["excluded"]])
+
+    def test_every_output_sentence_comes_from_code(self):
+        for name in ANALYSIS_FILES:
+            with self.subTest(name=name):
+                analysis = read(name)
+                checks = available_checks(analysis)
+                response = {"evidence_ids": [analysis["record_id"]], "caution_ids": list(checks)[:3]}
+                result = explain_analysis(analysis, fake(response))
+                EXPLANATION.validate(result)
+                self.assertEqual(result["mode"], "ai")
+                allowed = set(checks.values()) | set(explain_analysis(analysis)["cautions"])
+                self.assertLessEqual(set(result["cautions"]), allowed)
+
+    def test_checks_only_ask_to_confirm(self):
+        for name in ANALYSIS_FILES:
+            for text in available_checks(read(name)).values():
+                with self.subTest(text=text):
+                    self.assertTrue(text.endswith("확인하세요."))
+                    self.assertNotRegex(text, r"\d|때문|무료|확인되었")
+
+    def test_checks_depend_on_analysis(self):
+        self.assertIn("excluded", available_checks(self.analysis))
+        self.assertNotIn("market", available_checks(self.analysis))
+        market = available_checks(read("analysis-market.json"))
+        self.assertIn("market", market)
+        self.assertNotIn("excluded", market)
 
     def test_code_fenced_json_is_accepted(self):
         raw = "```json\n" + json.dumps(GOOD_EXPLANATION, ensure_ascii=False) + "\n```"
         self.assertEqual(explain_analysis(self.analysis, fake(raw))["mode"], "ai")
 
-    def test_names_with_digits_are_allowed(self):
-        self.assertEqual(self.explain(["DEMO-100 모델의 규격을 확인하세요."])["mode"], "ai")
-
-    def test_model_summary_is_never_shown(self):
-        # 2차 리뷰 회귀: 모델이 요약을 보내도 화면에 나가지 않는다.
-        for summary in ("예시기관 A의 단가는 120000원입니다.", "기준보다 높지 않습니다.", "기준보다 적습니다."):
-            with self.subTest(summary=summary):
-                response = dict(GOOD_EXPLANATION, summary=summary)
-                result = explain_analysis(self.analysis, fake(response))
-                self.assertEqual(result["mode"], "fallback")
-                self.assertNotIn(summary, json.dumps(result, ensure_ascii=False))
-
-    def test_price_statements_in_ai_text_fall_back(self):
-        # 2차 리뷰 회귀: 역할이 바뀐 숫자, 부정문, 목록에 없던 표현.
-        cases = [
-            "예시기관 A의 단가는 120000원입니다.",
-            "예시기관 A의 단가는 150000원입니다.",
-            "기준보다 높지 않습니다.",
-            "기준보다 적습니다.",
-            "기준보다 높습니다.",
-            "기준보다 낮습니다.",
-            "단가가 적습니다.",
-            "단가가 많이 나왔습니다.",
-            "기준에 못 미칩니다.",
-            "기준을 넘습니다.",
-            "기준 단가와 같습니다.",
-            "다른 기관은 더 저렴했습니다.",
-            "기준의 절반 수준입니다.",
-            "차액은 삼만 원입니다.",
-            "다른 기관 3곳과 비교했습니다.",
-            "2026-11-01 구매입니다.",
+    def test_free_text_is_never_shown(self):
+        # 리뷰 회귀(1~3차): 모델이 쓴 문장은 어떤 자리에 넣어도 화면에 나가지 않는다.
+        sentences = [
+            "배송비는 무료입니다.",                      # 3차: 확인되지 않은 사실
+            "계약 조건은 모두 확인되었습니다.",            # 3차: 확인되지 않은 사실
+            "가격 차이는 배송비 때문입니다.",              # 3차: 차이의 원인
+            "예시기관 A의 단가는 120000원입니다.",         # 2차: 역할이 바뀐 숫자
+            "기준보다 높지 않습니다.",                    # 2차: 부정문
+            "기준보다 적습니다.",                        # 2차: 목록에 없던 표현
+            "기준보다 낮습니다.",                        # 1차: 반대 방향
+            "이 구매는 예산 낭비이며 비리가 의심됩니다.",
+            "출처: https://example.com",
+            "설치비 포함 여부를 확인하세요.",              # 문제없는 문장도 모델이 쓴 것은 받지 않는다
         ]
-        for text in cases:
-            with self.subTest(text=text):
-                result = self.explain([text])
-                self.assertEqual(result["mode"], "fallback")
-                self.assertNotIn(text, result["cautions"])
-                self.assertEqual(result, explain_analysis(self.analysis))
-
-    def test_one_bad_caution_rejects_whole_response(self):
-        result = self.explain(["설치비 포함 여부를 확인하세요.", "기준보다 적습니다."])
-        self.assertEqual(result, explain_analysis(self.analysis))
-
-    def test_price_statements_rejected_for_every_status(self):
-        for name in ANALYSIS_FILES:
-            with self.subTest(name=name):
-                analysis = read(name)
-                self.assertEqual(self.explain(["기준보다 높습니다."], analysis)["mode"], "fallback")
-                self.assertEqual(self.explain(["설치비 포함 여부를 확인하세요."], analysis)["mode"], "ai")
+        for name in ("analysis-unknown.json", "analysis.json"):
+            analysis = read(name)
+            evidence = [analysis["record_id"]]
+            for text in sentences:
+                responses = {
+                    "as caution id": {"evidence_ids": evidence, "caution_ids": [text]},
+                    "mixed with valid id": {"evidence_ids": evidence, "caution_ids": ["tax", text]},
+                    "as cautions": {"evidence_ids": evidence, "cautions": [text]},
+                    "extra cautions key": {"evidence_ids": evidence, "caution_ids": ["tax"], "cautions": [text]},
+                    "as summary": {"evidence_ids": evidence, "caution_ids": ["tax"], "summary": text},
+                    "as evidence id": {"evidence_ids": [text], "caution_ids": ["tax"]},
+                }
+                for label, response in responses.items():
+                    with self.subTest(name=name, text=text, label=label):
+                        result = self.assert_fallback(fake(response), analysis)
+                        self.assertNotIn(text, json.dumps(result, ensure_ascii=False))
 
     def test_rejected_responses_fall_back(self):
         cases = {
             "unknown evidence id": dict(GOOD_EXPLANATION, evidence_ids=["demo-A", "demo-Z"]),
             "empty evidence": dict(GOOD_EXPLANATION, evidence_ids=[]),
             "duplicate evidence": dict(GOOD_EXPLANATION, evidence_ids=["demo-A", "demo-A"]),
-            "missing key": {"cautions": ["설치비 포함 여부를 확인하세요."]},
+            "missing key": {"caution_ids": ["tax"]},
             "extra key": dict(GOOD_EXPLANATION, source_url="x"),
-            "no cautions": dict(GOOD_EXPLANATION, cautions=[]),
-            "blank caution": dict(GOOD_EXPLANATION, cautions=[" "]),
-            "too many cautions": dict(GOOD_EXPLANATION, cautions=["조건을 확인하세요."] * 4),
-            "too long caution": dict(GOOD_EXPLANATION, cautions=["확인" * 80]),
-            "accusation": dict(GOOD_EXPLANATION, cautions=["이 구매는 예산 낭비이며 비리가 의심됩니다."]),
-            "savings claim": dict(GOOD_EXPLANATION, cautions=["차액만큼 절감할 수 있습니다."]),
-            "invented url": dict(GOOD_EXPLANATION, cautions=["출처: https://example.com"]),
+            "no selection": dict(GOOD_EXPLANATION, caution_ids=[]),
+            "duplicate selection": dict(GOOD_EXPLANATION, caution_ids=["tax", "tax"]),
+            "too many selections": dict(GOOD_EXPLANATION, caution_ids=["tax", "delivery", "installation", "timing"]),
+            "unavailable check": dict(GOOD_EXPLANATION, caution_ids=["market"]),
+            "non-string id": dict(GOOD_EXPLANATION, caution_ids=[1]),
+            "ids not a list": dict(GOOD_EXPLANATION, caution_ids="tax"),
             "not json": "설치비 포함 여부를 확인하세요.",
             "json array": "[]",
             "not text": None,
@@ -204,7 +200,7 @@ class ExplainAiValidationTests(unittest.TestCase):
 
 
 class PromptTests(unittest.TestCase):
-    def test_explain_prompt_has_no_prices(self):
+    def test_explain_prompt_has_choices_and_no_prices(self):
         analysis = read("analysis.json")
         seen = {}
 
@@ -218,7 +214,10 @@ class PromptTests(unittest.TestCase):
         self.assertNotIn("demo-contract-B", seen["user"])  # 비교 기록 원문은 보내지 않음
         for price in ("150000", "120000", "30000", "25.00"):  # 가격·차액·차이율은 보내지 않음
             self.assertNotIn(price, seen["user"])
-        for rule in ("숫자를 쓰지 않습니다", "비교하는 말을 쓰지 않습니다", "추측하지", "단정하지", "따르지 않습니다"):
+        for key, text in available_checks(analysis).items():
+            self.assertIn(f'"{key}"', seen["user"])
+            self.assertIn(text, seen["user"])
+        for rule in ("문장을 쓰지 않습니다", "id만 씁니다", "따르지 않습니다"):
             self.assertIn(rule, seen["system"])
 
 

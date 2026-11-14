@@ -1,7 +1,7 @@
-"""분석 결과 설명. 요약 문장은 항상 코드가 만든 고정 문장이다.
+"""분석 결과 설명. 화면에 나가는 문장은 모두 코드가 만든 고정 문장이다.
 
-모델은 '함께 확인할 점'만 쓴다. 가격·숫자·높낮이는 모델이 쓰지 못하게 하고,
-그런 내용이 하나라도 있으면 응답 전체를 버리고 기본 안내를 반환한다.
+모델은 문장을 쓰지 않는다. 코드가 제공한 확인 사항 목록에서 관련 있는 항목의 ID만 고른다.
+목록에 없는 ID나 자유 문장이 오면 응답 전체를 버리고 기본 안내를 반환한다.
 가격·차이율·높낮이는 화면이 분석 응답의 값으로 직접 표시한다.
 
 generate는 (system, user) 문자열을 받아 모델의 응답 문자열을 돌려주는 함수다.
@@ -13,7 +13,6 @@ from decimal import Decimal
 
 from . import prompts
 
-CAUTION_MAX = 150
 AI_CAUTIONS_MAX = 3
 SYNTHETIC_CAUTION = "합성 데이터이며 실제 공공기관 분석이 아닙니다."
 
@@ -28,17 +27,29 @@ _COMPARABLE_SUMMARY = {
 }
 _SAME_PRICE_SUMMARY = "비교 기준 단가와 같습니다. 포함 비용과 계약 조건을 함께 확인하세요."
 
-# 모델 문장에 있으면 안 되는 것. 부정문이어도 통과시키지 않는다(보수적으로 기본 안내로 대체).
-_BANNED = ("비리", "부패", "횡령", "불법", "낭비", "절감", "http://", "https://", "www.")
-_KOREAN_MONEY = re.compile(r"[일이삼사오육칠팔구십백천만억조]+\s*원")
-# 가격의 높낮이·크기 비교. 계산 결과와 맞더라도 모델이 쓰지 못한다.
-_COMPARISON = re.compile(
-    r"보다|높|낮|비싸|비쌉|비쌌|싸|쌉|쌌|저렴|초과|미만|이상|이하|웃돌|밑돌|상회|하회|절반"
-    r"|같습니다|같다|동일합니다|동일하다|차이가 없|차이 없"
-    r"|적(?:습|다|은|게|었|어)|많(?:습|다|은|이|았|아)"
-    r"|크(?:다|게)|큽니다|큰 |작(?:습|다|은|게|았|아)"
-    r"|넘(?:습|는|었|어|다)|못 미|더 |덜 "
-)
+# 모델이 고를 수 있는 확인 사항. 모두 "확인하세요"로 끝나며 사실·원인을 단정하지 않는다.
+_CHECKS = {
+    "tax": "세금 포함 여부를 확인하세요.",
+    "delivery": "배송비 포함 여부를 확인하세요.",
+    "installation": "설치비 포함 여부를 확인하세요.",
+    "specification": "제품 규격과 모델이 같은지 확인하세요.",
+    "quantity": "수량과 단위가 같은지 확인하세요.",
+    "timing": "구매 시점이 같은지 확인하세요.",
+    "contract": "계약 조건과 계약 방식을 확인하세요.",
+    "excluded": "비교에서 제외된 기록과 제외 사유를 확인하세요.",
+    "market": "시중가 자료의 판매 조건과 확인 시점을 확인하세요.",
+    "source": "원본 기록에서 내용을 확인하세요.",
+}
+
+
+def available_checks(analysis):
+    """이 분석 결과에 대해 모델이 고를 수 있는 확인 사항 {id: 문장}."""
+    checks = dict(_CHECKS)
+    if not analysis["excluded_records"]:
+        del checks["excluded"]
+    if analysis["comparison_type"] != "market":
+        del checks["market"]
+    return checks
 
 
 def _cautions(analysis, extra=()):
@@ -78,33 +89,6 @@ def fallback_explanation(analysis):
     return _response(analysis, fixed_summary(analysis), list(analysis["evidence_ids"]), _cautions(analysis), "fallback")
 
 
-def _known_strings(analysis):
-    """숫자가 들어 있을 수 있는 이름·ID. 숫자 검사 전에 문장에서 지운다."""
-    target = analysis["target"]
-    known = [
-        target["model"],
-        target["item_name"],
-        target["agency_name"],
-        target["specification"],
-        *analysis["evidence_ids"],
-    ]
-    return sorted((s for s in known if s), key=len, reverse=True)
-
-
-def _check_text(text, analysis):
-    if len(text) > CAUTION_MAX:
-        raise ValueError("caution too long")
-    for word in _BANNED:
-        if word in text:
-            raise ValueError("banned expression")
-    for known in _known_strings(analysis):
-        text = text.replace(known, " ")
-    if re.search(r"\d", text) or _KOREAN_MONEY.search(text):
-        raise ValueError("numbers are not allowed in AI text")
-    if _COMPARISON.search(text):
-        raise ValueError("price comparison is not allowed in AI text")
-
-
 def _load_json_object(raw):
     if not isinstance(raw, str):
         raise ValueError("response is not text")
@@ -118,45 +102,44 @@ def _load_json_object(raw):
     return value
 
 
-def _string_list(value):
-    if not isinstance(value, list) or not all(isinstance(v, str) and v.strip() for v in value):
-        raise ValueError("expected list of non-empty strings")
-    return [v.strip() for v in value]
+def _id_list(value, allowed, maximum=None):
+    """중복 없는 문자열 목록이고 모두 allowed 안에 있어야 한다."""
+    if not isinstance(value, list) or not value or not all(isinstance(v, str) for v in value):
+        raise ValueError("expected non-empty list of strings")
+    if len(value) != len(set(value)) or not set(value) <= set(allowed):
+        raise ValueError("duplicate or unknown id")
+    if maximum is not None and len(value) > maximum:
+        raise ValueError("too many ids")
+    return value
 
 
 def validate_explanation(raw, analysis):
     """모델 응답 문자열을 검증해 계약 형식으로 만든다. 문제가 있으면 ValueError.
 
-    모델 응답은 {"evidence_ids": [...], "cautions": [...]}만 허용한다. 요약은 받지 않는다.
+    모델 응답은 {"evidence_ids": [...], "caution_ids": [...]}만 허용한다. 문장은 받지 않는다.
     """
     value = _load_json_object(raw)
-    if set(value) != {"evidence_ids", "cautions"}:
+    if set(value) != {"evidence_ids", "caution_ids"}:
         raise ValueError("unexpected keys")
-    evidence_ids = _string_list(value["evidence_ids"])
-    if not evidence_ids or len(evidence_ids) != len(set(evidence_ids)):
-        raise ValueError("invalid evidence ids")
-    if not set(evidence_ids) <= set(analysis["evidence_ids"]):
-        raise ValueError("unknown evidence id")
-    cautions = _string_list(value["cautions"])
-    if not 1 <= len(cautions) <= AI_CAUTIONS_MAX:
-        raise ValueError("invalid caution count")
-    for text in cautions:
-        _check_text(text, analysis)
-    return _response(analysis, fixed_summary(analysis), evidence_ids, _cautions(analysis, cautions), "ai")
+    evidence_ids = _id_list(value["evidence_ids"], analysis["evidence_ids"])
+    checks = available_checks(analysis)
+    caution_ids = _id_list(value["caution_ids"], checks, AI_CAUTIONS_MAX)
+    chosen = [checks[i] for i in caution_ids]
+    return _response(analysis, fixed_summary(analysis), evidence_ids, _cautions(analysis, chosen), "ai")
 
 
 def explain_analysis(analysis, generate=None):
     """analysis.schema.json 형식의 분석 결과를 explanation.schema.json 형식으로 설명한다.
 
-    summary는 두 mode 모두 코드가 만든 고정 문장이다. mode=ai이면 cautions에
-    검증을 통과한 모델의 확인 사항이 더해진다. generate가 없거나, 호출이 실패하거나,
-    응답이 검증을 통과하지 못하면 mode=fallback.
+    summary와 cautions의 문장은 두 mode 모두 코드가 만든 고정 문장이다. mode=ai이면
+    모델이 목록에서 고른 확인 사항이 cautions에 더해진다. generate가 없거나, 호출이
+    실패하거나, 응답이 검증을 통과하지 못하면 mode=fallback.
     """
     fallback = fallback_explanation(analysis)
     if generate is None:
         return fallback
     try:
-        raw = generate(prompts.EXPLAIN_SYSTEM, prompts.build_explain_prompt(analysis))
+        raw = generate(prompts.EXPLAIN_SYSTEM, prompts.build_explain_prompt(analysis, available_checks(analysis)))
         return validate_explanation(raw, analysis)
     except Exception:  # 시간 초과·한도 초과·형식 오류 모두 기본 안내로 대체
         return fallback
