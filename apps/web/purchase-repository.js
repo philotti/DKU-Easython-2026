@@ -11,6 +11,9 @@ export function filterExamples(items, f) {
     && (!f.agency_id || a.target.agency_id === f.agency_id)
     && (!f.item_id || a.target.item_id === f.item_id) && (!f.status || a.status === f.status))
     .sort((a, b) => {
+      if (f.sort === 'preliminary_available_desc' && (a.difference_pct == null) !== (b.difference_pct == null)) {
+        return a.difference_pct == null ? 1 : -1;
+      }
       if (f.sort === 'difference_pct_desc') {
         const x = a.difference_pct, y = b.difference_pct;
         return x == null ? (y == null ? a.record_id.localeCompare(b.record_id) : 1) : y == null ? -1 : Number(y) - Number(x) || a.record_id.localeCompare(b.record_id);

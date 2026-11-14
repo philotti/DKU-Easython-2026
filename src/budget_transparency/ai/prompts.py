@@ -43,6 +43,12 @@ def build_explain_prompt(analysis, checks):
         "limitations": analysis["limitations"],
         "synthetic": analysis["synthetic"],
     }
+    if analysis.get('_preliminary'):
+        facts['reference'] = {
+            'type': '조건 미확인 참고 비교',
+            'available': analysis.get('difference') is not None,
+            'basis': analysis.get('comparison_basis'),
+        }
     choices = [{"id": key, "text": text} for key, text in checks.items()]
     return (
         "<data>\n" + json.dumps(facts, ensure_ascii=False, indent=2) + "\n</data>\n"

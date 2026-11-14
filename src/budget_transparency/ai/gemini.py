@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[3]
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 KEY_ENV = "GEMINI_API_KEY"
 MODEL_ENV = "GEMINI_MODEL"
-TIMEOUT_SECONDS = 10
+TIMEOUT_SECONDS = 30
 _MODEL_ID = re.compile(r"[A-Za-z0-9._-]+")
 
 
@@ -95,8 +95,10 @@ def make_generate(api_key=None, model=None, timeout=TIMEOUT_SECONDS, opener=None
         body = {
             "system_instruction": {"parts": [{"text": system}]},
             "contents": [{"role": "user", "parts": [{"text": user}]}],
-            "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
+            "generationConfig": {"responseMimeType": "application/json"},
         }
+        if model == 'gemini-3.5-flash':
+            body['generationConfig']['thinkingConfig'] = {'thinkingLevel': 'minimal'}
         request = urllib.request.Request(
             url,
             data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
