@@ -402,7 +402,17 @@ class QueryAiValidationTests(unittest.TestCase):
                 self.assertEqual((result["mode"], result["filters"]), ("fallback", expected))
                 self.assertTrue(any("여러 품목이 검색될 수 있습니다" in w for w in result["warnings"]))
         result = parse_query(text, DUP_OPTIONS, fake(expected))
+        QUERY.validate(result)
         self.assertEqual((result["mode"], result["filters"]), ("ai", expected))
+        # 리뷰 회귀: 모델이 올바르게 답한 AI 경로에서도 같은 경고를 표시한다.
+        self.assertEqual(result["warnings"], ["‘중복 품목’ 이름의 품목이 여러 개라 하나로 정하지 않고 검색어로 사용했습니다. 여러 품목이 검색될 수 있습니다."])
+        fallback = parse_query(text, DUP_OPTIONS)
+        self.assertIn(result["warnings"][0], fallback["warnings"])
+
+    def test_no_same_name_warning_for_unique_item_in_ai_mode(self):
+        response = {"q": None, "agency_id": "agency-A", "item_id": "demo-item-1", "date_from": None, "date_to": None}
+        result = parse_query("예시기관 A의 예시 물품", DUP_OPTIONS, fake(response))
+        self.assertEqual((result["mode"], result["warnings"]), ("ai", []))
 
     def test_ids_rejected_without_options(self):
         self.assertEqual(parse_query(self.TEXT, None, fake(self.GOOD))["mode"], "fallback")

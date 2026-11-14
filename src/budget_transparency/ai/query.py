@@ -232,6 +232,11 @@ def parse_query(text, options=None, generate=None):
         except Exception:  # 시간 초과·한도 초과·형식 오류 모두 기본 규칙으로 대체
             warnings.append(W_AI_FAILED)
         else:
+            # 같은 이름의 ID가 여러 개라 검색어로 넘긴 경우, AI 결과에도 같은 경고를 붙인다.
+            for key, label in (("agencies", "기관"), ("items", "품목")):
+                name = _shared_name(_candidates(_hits(text, _entries(options, key))))
+                if name:
+                    warnings.append(W_SAME_NAME.format(name=name, label=label))
             if filters["q"] is None:
                 has_dates = bool(filters["date_from"] or filters["date_to"])
                 rest = _leftover(text, _entries(options, "agencies") + _entries(options, "items"), has_dates)

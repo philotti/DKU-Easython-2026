@@ -7,7 +7,7 @@
 코드 버전: C/ai/ambiguous-item-name 브랜치, main caa8fba에 7번 수정 반영(커밋 전)
 데이터 파일·버전 / 합성 또는 실제: tests/fixtures/contracts-v1 (synthetic-v1) / 합성
 실제 실행 명령: .venv/bin/python -m unittest discover -s tests/unit -p 'test_*.py'
-실제 결과: test_ai_validation.py 34개, test_contract_validation.py 9개, test_compare.py 27개 통과, Python 3.15.2 로컬
+실제 결과: test_ai_validation.py 35개, test_contract_validation.py 9개, test_compare.py 27개 통과, Python 3.15.2 로컬
 미실행: test_fixture_server.py(로컬 .venv에 fastapi 미설치)
 이전 결과: c65767e는 32개 통과였으나 4번의 세 사례를, 392789b는 39개 통과였으나 5번의 두 사례를, 0ae24f0은 40개 통과였으나 6번의 세 사례를, 907f8ef는 AI 테스트 30개 통과였으나 7번의 사례를 놓쳤음
 ```
@@ -121,6 +121,7 @@ E의 서버 PR(#7)을 검토하며 실제 시연 데이터(data/demo/purchases.j
 
 - 같은 이름에 ID가 여러 개면 ID를 임의로 고르지 않고 그 이름을 검색어 q로 넘깁니다. “‘노트북컴퓨터’ 이름의 품목이 여러 개라 하나로 정하지 않고 검색어로 사용했습니다. 여러 품목이 검색될 수 있습니다.” 경고를 붙입니다.
 - AI 결과가 같은 이름의 ID 중 하나를 고르거나 그 이름을 검색어에서 빼면 기본 규칙으로 대체합니다.
+- AI 결과가 올바르게 item_id=null, q=품목명을 반환해 mode=ai로 통과할 때도 같은 경고를 붙입니다. (f183ef8에서는 warnings가 비어 있었고, E의 리뷰에서 발견되어 수정했습니다.)
 - 합성 목록(같은 이름의 품목 ID 세 개)으로 회귀 테스트를 추가했습니다.
 
 ## 미확인·남은 문제
