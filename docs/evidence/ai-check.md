@@ -4,10 +4,10 @@
 
 ```text
 확인 날짜 / 담당자: 2026-11-14 / C 담당(AI 코딩 도구로 작성·실행)
-코드 버전: C/ai/gemini-connect 브랜치, main d50b066에 8번 추가(커밋 전)
+코드 버전: C/ai/gemini-connect 브랜치, 45cabf8에 리뷰 반영(커밋 전)
 데이터 파일·버전 / 합성 또는 실제: tests/fixtures/contracts-v1 (synthetic-v1) / 합성
 실제 실행 명령: .venv/bin/python -m unittest discover -s tests/unit -p 'test_*.py'
-실제 결과: test_ai_validation.py 42개, test_contract_validation.py 9개, test_compare.py 27개 통과, Python 3.15.2 로컬
+실제 결과: test_ai_validation.py 44개, test_contract_validation.py 9개, test_compare.py 27개 통과, Python 3.15.2 로컬
 미실행: test_fixture_server.py(로컬 .venv에 fastapi 미설치)
 이전 결과: c65767e는 32개 통과였으나 4번의 세 사례를, 392789b는 39개 통과였으나 5번의 두 사례를, 0ae24f0은 40개 통과였으나 6번의 세 사례를, 907f8ef는 AI 테스트 30개 통과였으나 7번의 사례를 놓쳤음
 ```
@@ -136,10 +136,13 @@ E의 서버 PR(#7)을 검토하며 실제 시연 데이터(data/demo/purchases.j
 | 키나 모델 ID가 없으면 호출 함수가 None이 되어 기본 안내로 동작 | 통과 |
 | HTTP 429·500, 연결 실패, 시간 초과, 빈 응답, 차단된 응답은 예외가 되고 두 함수는 fallback | 통과 |
 | `.env`의 값은 이미 설정된 환경 변수를 덮어쓰지 않음 | 통과 |
+| 301·302·303·307·308 리디렉션을 따라가지 않고, 키 헤더가 다른 호스트로 전달되지 않음(로컬 서버 두 개로 확인) | 통과 |
+
+리뷰에서 발견된 문제: 45cabf8에서는 urllib의 기본 동작대로 리디렉션을 따라갔고, 그때 `x-goog-api-key` 헤더가 리디렉션된 주소로 다시 전송됐습니다(E의 리뷰). 리디렉션을 거절하도록 고쳤고, 기본 urllib 호출이 실제로 키를 전달한다는 것과 수정 후에는 전달하지 않는다는 것을 모두 테스트로 확인했습니다.
 
 미확인:
 
-- 요청 주소와 본문 형식은 Gemini REST API(`generateContent`)에 대해 알고 있는 내용으로 작성했고, 공식 문서나 실제 호출로 대조하지 않았습니다. 첫 실제 호출에서 확인해야 합니다.
+- 요청 경로와 키 헤더의 기본 형태는 E가 Google 공식 문서와 대조했습니다. 요청 본문 형식과 실제 응답은 첫 실제 호출에서 확인해야 합니다.
 - 사용할 모델 ID는 정해지지 않았습니다.
 - `python3 scripts/check_ai_live.py` 실행 결과(질문별 조건, 설명, 걸린 시간)를 여기에 추가해야 합니다.
 

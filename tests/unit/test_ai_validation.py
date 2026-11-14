@@ -525,6 +525,115 @@ class GeminiCallTests(unittest.TestCase):
         self.assertNotIn(self.KEY, json.dumps(query, ensure_ascii=False))
 
 
+class GeminiRedirectTests(unittest.TestCase):
+    """리뷰 회귀: 리디렉션을 따라가 키 헤더가 다른 호스트로 전달되면 안 된다. 로컬 서버 두 개로 확인한다."""
+    KEY = "test-key-not-real"
+
+    def serve(self, handler):
+        import http.server
+        import threading
+        server = http.server.HTTPServer(("127.0.0.1", 0), handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return server
+
+    def test_redirect_is_refused_and_key_not_forwarded(self):
+        import http.server
+        received = {"other": [], "first": []}
+
+        class Other(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                received["other"].append(dict(self.headers))
+                body = json.dumps(model_reply('{"stolen": true}')).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            do_GET = do_POST
+
+            def log_message(self, *args):
+                pass
+
+        other = self.serve(Other)
+        target = f"http://localhost:{other.server_port}/elsewhere"  # 다른 호스트 이름·포트
+
+        for code in (301, 302, 303, 307, 308):
+            with self.subTest(code=code):
+                class First(http.server.BaseHTTPRequestHandler):
+                    def do_POST(self):
+                        received["first"].append(self.headers.get("x-goog-api-key"))
+                        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                        self.send_response(code)
+                        self.send_header("Location", target)
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+
+                    def log_message(self, *args):
+                        pass
+
+                first = self.serve(First)
+                original = gemini.API_URL
+                gemini.API_URL = f"http://127.0.0.1:{first.server_port}/v1beta/models/{{model}}:generateContent"
+                try:
+                    generate = gemini.make_generate(api_key=self.KEY, model="test-model", timeout=5)
+                finally:
+                    gemini.API_URL = original
+                with self.assertRaises(gemini.GeminiError) as caught:
+                    generate("지시문", "자료")
+                self.assertNotIn(self.KEY, str(caught.exception))
+                self.assertEqual(received["first"][-1], self.KEY)  # 원래 주소에는 키가 갔다
+                self.assertEqual(received["other"], [])            # 리디렉션된 주소에는 요청 자체가 가지 않았다
+                analysis = read("analysis.json")
+                self.assertEqual(explain_analysis(analysis, generate), explain_analysis(analysis))
+                self.assertEqual(received["other"], [])
+
+    def test_plain_urllib_would_forward_the_key(self):
+        # 이 테스트가 실제로 위험을 잡는지 확인: 기본 urlopen은 키 헤더를 리디렉션 대상에 보낸다.
+        import http.server
+        import urllib.request
+        received = []
+
+        class Other(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                received.append(self.headers.get("x-goog-api-key"))
+                body = json.dumps(model_reply("{}")).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            do_POST = do_GET
+
+            def log_message(self, *args):
+                pass
+
+        other = self.serve(Other)
+
+        class First(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                self.send_response(302)
+                self.send_header("Location", f"http://localhost:{other.server_port}/elsewhere")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        first = self.serve(First)
+        original = gemini.API_URL
+        gemini.API_URL = f"http://127.0.0.1:{first.server_port}/v1beta/models/{{model}}:generateContent"
+        try:
+            unsafe = gemini.make_generate(api_key=self.KEY, model="test-model", timeout=5, opener=urllib.request.urlopen)
+        finally:
+            gemini.API_URL = original
+        unsafe("지시문", "자료")
+        self.assertEqual(received, [self.KEY])
+
+
 class EnvFileTests(unittest.TestCase):
     def test_load_env_reads_file_without_overriding(self):
         import os

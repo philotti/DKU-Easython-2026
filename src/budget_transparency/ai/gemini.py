@@ -7,6 +7,7 @@
     parse_query(text, options, generate)
 
 키는 요청 헤더로만 보낸다. URL·로그·오류 메시지에 넣지 않는다.
+리디렉션은 따라가지 않는다. 키가 든 헤더가 다른 주소로 전달되지 않게 하기 위해서다.
 SDK를 설치하지 않고 표준 라이브러리로 REST API를 호출한다.
 """
 import json
@@ -26,6 +27,16 @@ _MODEL_ID = re.compile(r"[A-Za-z0-9._-]+")
 
 class GeminiError(RuntimeError):
     """모델 호출 실패. 메시지에 키·요청 내용을 넣지 않는다."""
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """리디렉션을 거절한다. urllib 기본 동작은 x-goog-api-key 헤더를 새 주소로 다시 보낸다."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None  # urllib이 3xx 응답을 HTTPError로 올린다
+
+
+_open_without_redirects = urllib.request.build_opener(_NoRedirect).open
 
 
 def load_env(path=None):
@@ -68,7 +79,7 @@ def make_generate(api_key=None, model=None, timeout=TIMEOUT_SECONDS, opener=None
     """(system, user) → 응답 문자열 함수를 만든다. 키나 모델 ID가 없으면 None.
 
     None을 explain_analysis·parse_query에 그대로 넘기면 AI 없이 동작한다.
-    opener는 테스트에서 실제 호출을 대신하는 함수다(기본은 urllib.request.urlopen).
+    opener는 테스트에서 실제 호출을 대신하는 함수다(기본은 리디렉션을 따라가지 않는 urllib 호출).
     """
     api_key = api_key if api_key is not None else os.environ.get(KEY_ENV, "")
     model = model if model is not None else os.environ.get(MODEL_ENV, "")
@@ -77,7 +88,7 @@ def make_generate(api_key=None, model=None, timeout=TIMEOUT_SECONDS, opener=None
         return None
     if not _MODEL_ID.fullmatch(model):
         raise GeminiError("모델 ID 형식이 올바르지 않습니다.")
-    opener = opener or urllib.request.urlopen
+    opener = opener or _open_without_redirects
     url = API_URL.format(model=model)
 
     def generate(system, user):
@@ -96,7 +107,9 @@ def make_generate(api_key=None, model=None, timeout=TIMEOUT_SECONDS, opener=None
             with opener(request, timeout=timeout) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            raise GeminiError(f"모델 호출이 실패했습니다(HTTP {exc.code}).") from None
+            code = exc.code
+            exc.close()  # 오류 응답 본문을 읽지 않고 닫는다
+            raise GeminiError(f"모델 호출이 실패했습니다(HTTP {code}).") from None
         except (urllib.error.URLError, TimeoutError, OSError):
             raise GeminiError("모델에 연결하지 못했거나 시간이 초과되었습니다.") from None
         except ValueError:
