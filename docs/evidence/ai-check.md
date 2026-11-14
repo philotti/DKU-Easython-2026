@@ -4,10 +4,10 @@
 
 ```text
 확인 날짜 / 담당자: 2026-11-14 / C 담당(AI 코딩 도구로 작성·실행)
-코드 버전: C/ai/ambiguous-item-name 브랜치, main caa8fba에 7번 수정 반영(커밋 전)
+코드 버전: C/ai/gemini-connect 브랜치, main d50b066에 8번 추가(커밋 전)
 데이터 파일·버전 / 합성 또는 실제: tests/fixtures/contracts-v1 (synthetic-v1) / 합성
 실제 실행 명령: .venv/bin/python -m unittest discover -s tests/unit -p 'test_*.py'
-실제 결과: test_ai_validation.py 35개, test_contract_validation.py 9개, test_compare.py 27개 통과, Python 3.15.2 로컬
+실제 결과: test_ai_validation.py 42개, test_contract_validation.py 9개, test_compare.py 27개 통과, Python 3.15.2 로컬
 미실행: test_fixture_server.py(로컬 .venv에 fastapi 미설치)
 이전 결과: c65767e는 32개 통과였으나 4번의 세 사례를, 392789b는 39개 통과였으나 5번의 두 사례를, 0ae24f0은 40개 통과였으나 6번의 세 사례를, 907f8ef는 AI 테스트 30개 통과였으나 7번의 사례를 놓쳤음
 ```
@@ -123,6 +123,25 @@ E의 서버 PR(#7)을 검토하며 실제 시연 데이터(data/demo/purchases.j
 - AI 결과가 같은 이름의 ID 중 하나를 고르거나 그 이름을 검색어에서 빼면 기본 규칙으로 대체합니다.
 - AI 결과가 올바르게 item_id=null, q=품목명을 반환해 mode=ai로 통과할 때도 같은 경고를 붙입니다. (f183ef8에서는 warnings가 비어 있었고, E의 리뷰에서 발견되어 수정했습니다.)
 - 합성 목록(같은 이름의 품목 ID 세 개)으로 회귀 테스트를 추가했습니다.
+
+## 8. Gemini 호출 코드 추가 (실제 호출은 미확인)
+
+`src/budget_transparency/ai/gemini.py`에 `.env`를 읽는 `load_env()`와 호출 함수를 만드는 `make_generate()`를 추가했습니다. 2026-11-14 기준으로 **실제 Gemini 호출은 아직 한 번도 하지 않았습니다.** 로컬에 `.env`가 없어 키와 모델 ID가 설정되지 않은 상태입니다.
+
+가짜 응답으로 확인한 것(자동 테스트):
+
+| 확인한 것 | 판정 |
+|---|---|
+| 키는 요청 헤더에만 있고 URL·본문·오류 메시지에 없음 | 통과 |
+| 키나 모델 ID가 없으면 호출 함수가 None이 되어 기본 안내로 동작 | 통과 |
+| HTTP 429·500, 연결 실패, 시간 초과, 빈 응답, 차단된 응답은 예외가 되고 두 함수는 fallback | 통과 |
+| `.env`의 값은 이미 설정된 환경 변수를 덮어쓰지 않음 | 통과 |
+
+미확인:
+
+- 요청 주소와 본문 형식은 Gemini REST API(`generateContent`)에 대해 알고 있는 내용으로 작성했고, 공식 문서나 실제 호출로 대조하지 않았습니다. 첫 실제 호출에서 확인해야 합니다.
+- 사용할 모델 ID는 정해지지 않았습니다.
+- `python3 scripts/check_ai_live.py` 실행 결과(질문별 조건, 설명, 걸린 시간)를 여기에 추가해야 합니다.
 
 ## 미확인·남은 문제
 
