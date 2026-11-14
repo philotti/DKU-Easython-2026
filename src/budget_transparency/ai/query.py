@@ -16,13 +16,17 @@ FILTER_KEYS = ("q", "agency_id", "item_id", "date_from", "date_to")
 
 _DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 _KOREAN_DATE = re.compile(r"\d+\s*(?:년|월|일)")
+_WORD = "0-9A-Za-z가-힣_-"  # 낱말을 이루는 글자
+_PARTICLES = "에서|에게|으로|부터|까지|이랑|하고|의|을|를|은|는|이|가|에|로|과|와|도|만|랑"  # 이름 뒤에 붙는 조사
 _FROM_WORDS = ("부터", "이후")
 _TO_WORDS = ("까지", "이전")
 # 조건이 아닌 낱말: 조사, 기간 표현, 요청 표현, 모든 구매 기록에 해당하는 일반 명사
 _IGNORED = {
-    "의", "을", "를", "은", "는", "이", "가", "에", "에서", "로", "으로", "과", "와", "도", "만",
+    "의", "을", "를", "은", "는", "이", "가", "에", "에서", "에게", "로", "으로", "과", "와", "도", "만",
+    "이랑", "랑", "하고",
     "부터", "이후", "까지", "이전", "사이", "동안",
     "보여줘", "보여", "줘", "알려줘", "알려", "찾아줘", "찾아", "검색해줘", "해줘", "좀",
+    "보여주세요", "알려주세요", "찾아주세요", "검색해주세요", "해주세요", "주세요", "보여줘요", "알려줘요",
     "구매", "내역", "기록", "가격", "단가", "목록", "조회", "검색", "비교",
 }
 
@@ -40,10 +44,27 @@ def _norm(text):
     return re.sub(r"\s+", "", text).casefold()
 
 
+def _name_pattern(name):
+    """이름이 낱말로 나온 곳만 찾는 패턴.
+
+    글자가 포함되기만 하면 일치로 보면 '요'가 '보여주세요'에, '벨'이 '벨트'에 걸린다.
+    그래서 이름 앞은 낱말의 시작이어야 하고, 뒤는 낱말의 끝이거나 조사 뒤 낱말의 끝이어야 한다.
+    이름 안의 띄어쓰기는 있어도 없어도 된다('예시 물품' = '예시물품').
+    """
+    body = r"\s*".join(re.escape(ch) for ch in re.sub(r"\s+", "", name))
+    return re.compile(rf"(?<![{_WORD}]){body}(?=(?:{_PARTICLES})?(?![{_WORD}]))", re.IGNORECASE)
+
+
+def _mentioned(text, plain, value):
+    key = _norm(value)
+    # 값싼 포함 검사로 먼저 거르고, 후보만 낱말 단위로 확인한다(품목이 만 개가 넘어도 빠르게).
+    return bool(key) and key in plain and _name_pattern(value).search(text) is not None
+
+
 def _hits(text, entries):
-    """이름이나 ID가 질문에 그대로 나온 항목."""
+    """이름이나 ID가 질문에 낱말로 나온 항목."""
     plain = _norm(text)
-    return [e for e in entries if _norm(e["name"]) in plain or _norm(e["id"]) in plain]
+    return [e for e in entries if _mentioned(text, plain, e["name"]) or _mentioned(text, plain, e["id"])]
 
 
 def _candidates(hits):
@@ -79,8 +100,7 @@ def _leftover(text, entries, drop_korean_dates=False):
     """기관·품목 이름, 날짜, 조건이 아닌 낱말을 뺀 나머지. 인식하지 못한 내용이다."""
     names = [e[key] for e in _hits(text, entries) for key in ("name", "id")]
     for name in sorted(names, key=len, reverse=True):
-        pattern = r"\s*".join(re.escape(ch) for ch in re.sub(r"\s+", "", name))
-        text = re.sub(pattern, " ", text, flags=re.IGNORECASE)
+        text = _name_pattern(name).sub(" ", text)
     text = _DATE.sub(" ", text)
     if drop_korean_dates:
         text = _KOREAN_DATE.sub(" ", text)

@@ -36,6 +36,12 @@ def validator(name):
 EXPLANATION = validator("explanation.schema.json")
 QUERY = validator("query.schema.json")
 OPTIONS = read("options.json")
+# 전체 구매 데이터처럼 아주 짧은 품목명이 있는 경우(합성).
+SHORT_OPTIONS = {
+    "agencies": OPTIONS["agencies"],
+    "items": [{"id": "item-yo", "name": "요"}, {"id": "item-bell", "name": "벨"},
+              {"id": "item-desk", "name": "책상"}, {"id": "item-sofa", "name": "소파"}],
+}
 # 실제 시연 데이터처럼 같은 품목명에 ID가 여러 개인 경우(합성).
 DUP_OPTIONS = {
     "agencies": OPTIONS["agencies"],
@@ -293,6 +299,40 @@ class QueryFallbackTests(unittest.TestCase):
         self.assertEqual((filters["agency_id"], filters["item_id"], filters["q"]), ("agency-A", "demo-item-1", None))
         self.assertEqual(self.parse("dup-2 보여줘", DUP_OPTIONS)["item_id"], "dup-2")  # ID를 직접 쓴 경우
 
+    def test_short_item_names_match_only_as_words(self):
+        # 회귀: 전체 구매 데이터에는 '요', '벨' 같은 짧은 품목명이 있다. 글자 포함만으로 일치시키면 안 된다.
+        cases = {
+            "예시기관 A 구매 내역 보여주세요": {"agency_id": "agency-A", "item_id": None, "q": None},
+            "노트북 얼마에 샀어요": {"agency_id": None, "item_id": None, "q": "노트북 얼마에 샀어요"},
+            "예시기관 A 벨트": {"agency_id": "agency-A", "item_id": None, "q": "벨트"},
+            "예시기관 A 책상용 의자": {"agency_id": "agency-A", "item_id": None, "q": "책상용 의자"},
+            "소파가죽 가격": {"agency_id": None, "item_id": None, "q": "소파가죽"},
+            "예시기관 AB 구매 내역": {"agency_id": None, "item_id": None, "q": "예시기관 AB"},
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                filters = self.parse(text, SHORT_OPTIONS)
+                self.assertEqual({k: filters[k] for k in expected}, expected)
+
+    def test_names_followed_by_particles_still_match(self):
+        cases = {
+            "예시기관 A의 요": ("agency-A", "item-yo"),
+            "예시기관 A에서 벨을 샀나": ("agency-A", "item-bell"),
+            "예시기관 A가 산 책상": ("agency-A", "item-desk"),
+            "책상이랑 같이 산 것": (None, "item-desk"),
+            "예시기관A 책상, 가격": ("agency-A", "item-desk"),
+            "소파 가격?": (None, "item-sofa"),
+            "ITEM-DESK 보여줘": (None, "item-desk"),
+        }
+        for text, (agency, item) in cases.items():
+            with self.subTest(text=text):
+                filters = self.parse(text, SHORT_OPTIONS)
+                self.assertEqual((filters["agency_id"], filters["item_id"]), (agency, item))
+
+    def test_id_must_be_a_whole_word(self):
+        filters = self.parse("item-desk-2 보여줘", SHORT_OPTIONS)
+        self.assertEqual((filters["item_id"], filters["q"]), (None, "item-desk-2"))
+
     def test_without_options_ids_stay_null(self):
         filters = self.parse("예시기관 A의 예시 물품", options=None)
         self.assertEqual((filters["agency_id"], filters["item_id"]), (None, None))
@@ -413,6 +453,16 @@ class QueryAiValidationTests(unittest.TestCase):
         response = {"q": None, "agency_id": "agency-A", "item_id": "demo-item-1", "date_from": None, "date_to": None}
         result = parse_query("예시기관 A의 예시 물품", DUP_OPTIONS, fake(response))
         self.assertEqual((result["mode"], result["warnings"]), ("ai", []))
+
+    def test_model_cannot_use_name_that_is_only_part_of_a_word(self):
+        # 회귀: '보여주세요'의 '요'를 품목으로 고른 모델 응답은 질문과 연결되지 않은 것으로 본다.
+        text = "예시기관 A 구매 내역 보여주세요"
+        response = {"q": None, "agency_id": "agency-A", "item_id": "item-yo", "date_from": None, "date_to": None}
+        result = parse_query(text, SHORT_OPTIONS, fake(response))
+        QUERY.validate(result)
+        self.assertEqual((result["mode"], result["filters"]["agency_id"], result["filters"]["item_id"]), ("fallback", "agency-A", None))
+        accepted = parse_query("예시기관 A의 요", SHORT_OPTIONS, fake(response))
+        self.assertEqual((accepted["mode"], accepted["filters"]["item_id"]), ("ai", "item-yo"))
 
     def test_ids_rejected_without_options(self):
         self.assertEqual(parse_query(self.TEXT, None, fake(self.GOOD))["mode"], "fallback")
