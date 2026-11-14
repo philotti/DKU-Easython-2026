@@ -9,7 +9,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from budget_transparency.ai import prompts  # noqa: E402
+from budget_transparency.ai import gemini, prompts  # noqa: E402
 from budget_transparency.ai.explain import available_checks, explain_analysis  # noqa: E402
 from budget_transparency.ai.query import parse_query  # noqa: E402
 
@@ -416,6 +416,247 @@ class QueryAiValidationTests(unittest.TestCase):
 
     def test_ids_rejected_without_options(self):
         self.assertEqual(parse_query(self.TEXT, None, fake(self.GOOD))["mode"], "fallback")
+
+
+class FakeResponse:
+    def __init__(self, body):
+        self.body = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=False).encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self):
+        return self.body
+
+
+def model_reply(text):
+    """Gemini REST 응답 모양으로 감싼 가짜 응답."""
+    return {"candidates": [{"content": {"parts": [{"text": text}]}, "finishReason": "STOP"}]}
+
+
+class GeminiCallTests(unittest.TestCase):
+    """실제 네트워크 호출 없이 요청 모양·오류 처리·키 비노출을 검사한다."""
+    KEY = "test-key-not-real"
+
+    def make(self, reply=None, error=None, model="test-model"):
+        seen = {}
+
+        def opener(request, timeout):
+            seen.update(request=request, timeout=timeout)
+            if error is not None:
+                raise error
+            return FakeResponse(reply)
+
+        return gemini.make_generate(api_key=self.KEY, model=model, opener=opener), seen
+
+    def test_request_shape_and_key_only_in_header(self):
+        generate, seen = self.make(model_reply('{"ok": true}'))
+        self.assertEqual(generate("지시문", "자료"), '{"ok": true}')
+        request = seen["request"]
+        self.assertEqual(request.get_method(), "POST")
+        self.assertTrue(request.full_url.endswith("/models/test-model:generateContent"))
+        self.assertNotIn(self.KEY, request.full_url)
+        self.assertEqual(request.get_header("X-goog-api-key"), self.KEY)
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertNotIn(self.KEY, request.data.decode("utf-8"))
+        self.assertEqual(body["system_instruction"]["parts"][0]["text"], "지시문")
+        self.assertEqual(body["contents"][0]["parts"][0]["text"], "자료")
+        self.assertEqual(body["generationConfig"]["responseMimeType"], "application/json")
+        self.assertEqual(seen["timeout"], gemini.TIMEOUT_SECONDS)
+
+    def test_missing_key_or_model_gives_none(self):
+        self.assertIsNone(gemini.make_generate(api_key="", model="test-model"))
+        self.assertIsNone(gemini.make_generate(api_key=self.KEY, model=" "))
+        analysis = read("analysis.json")
+        self.assertEqual(explain_analysis(analysis, gemini.make_generate(api_key="", model=""))["mode"], "fallback")
+
+    def test_invalid_model_id_is_rejected(self):
+        for model in ("a/b", "x?key=1", "모델"):
+            with self.subTest(model=model):
+                with self.assertRaises(gemini.GeminiError):
+                    gemini.make_generate(api_key=self.KEY, model=model)
+
+    def test_failures_raise_without_leaking_key(self):
+        import urllib.error
+        cases = {
+            "quota": urllib.error.HTTPError("https://example.invalid/?key=" + self.KEY, 429, "Too Many Requests", None, None),
+            "server": urllib.error.HTTPError("https://example.invalid", 500, self.KEY, None, None),
+            "network": urllib.error.URLError("unreachable " + self.KEY),
+            "timeout": TimeoutError("timed out"),
+        }
+        for label, error in cases.items():
+            with self.subTest(label=label):
+                generate, _ = self.make(error=error)
+                with self.assertRaises(gemini.GeminiError) as caught:
+                    generate("지시문", "자료")
+                self.assertNotIn(self.KEY, str(caught.exception))
+                self.assertIsNone(caught.exception.__cause__)
+
+    def test_unusable_responses_raise(self):
+        replies = [b"not json", {}, {"candidates": []}, {"candidates": [{"finishReason": "SAFETY"}]},
+                   {"candidates": [{"content": {"parts": [{"text": "  "}]}}]},
+                   {"promptFeedback": {"blockReason": "SAFETY"}}]
+        for reply in replies:
+            with self.subTest(reply=reply):
+                generate, _ = self.make(reply)
+                with self.assertRaises(gemini.GeminiError):
+                    generate("지시문", "자료")
+
+    def test_connected_functions_use_model_and_fall_back(self):
+        analysis = read("analysis.json")
+        good, seen = self.make(model_reply(json.dumps(GOOD_EXPLANATION)))
+        result = explain_analysis(analysis, good)
+        EXPLANATION.validate(result)
+        self.assertEqual(result["mode"], "ai")
+        sent = seen["request"].data.decode("utf-8")
+        for price in ("150000", "120000"):  # 가격은 모델에 보내지 않는다
+            self.assertNotIn(price, sent)
+        bad, _ = self.make(model_reply("배송비는 무료입니다."))
+        self.assertEqual(explain_analysis(analysis, bad), explain_analysis(analysis))
+        import urllib.error
+        down, _ = self.make(error=urllib.error.HTTPError("https://example.invalid", 429, "quota", None, None))
+        self.assertEqual(explain_analysis(analysis, down)["mode"], "fallback")
+        query = parse_query("예시기관 A의 예시 물품", OPTIONS, down)
+        QUERY.validate(query)
+        self.assertEqual((query["mode"], query["filters"]["agency_id"]), ("fallback", "agency-A"))
+        self.assertNotIn(self.KEY, json.dumps(query, ensure_ascii=False))
+
+
+class GeminiRedirectTests(unittest.TestCase):
+    """리뷰 회귀: 리디렉션을 따라가 키 헤더가 다른 호스트로 전달되면 안 된다. 로컬 서버 두 개로 확인한다."""
+    KEY = "test-key-not-real"
+
+    def serve(self, handler):
+        import http.server
+        import threading
+        server = http.server.HTTPServer(("127.0.0.1", 0), handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return server
+
+    def test_redirect_is_refused_and_key_not_forwarded(self):
+        import http.server
+        received = {"other": [], "first": []}
+
+        class Other(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                received["other"].append(dict(self.headers))
+                body = json.dumps(model_reply('{"stolen": true}')).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            do_GET = do_POST
+
+            def log_message(self, *args):
+                pass
+
+        other = self.serve(Other)
+        target = f"http://localhost:{other.server_port}/elsewhere"  # 다른 호스트 이름·포트
+
+        for code in (301, 302, 303, 307, 308):
+            with self.subTest(code=code):
+                class First(http.server.BaseHTTPRequestHandler):
+                    def do_POST(self):
+                        received["first"].append(self.headers.get("x-goog-api-key"))
+                        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                        self.send_response(code)
+                        self.send_header("Location", target)
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+
+                    def log_message(self, *args):
+                        pass
+
+                first = self.serve(First)
+                original = gemini.API_URL
+                gemini.API_URL = f"http://127.0.0.1:{first.server_port}/v1beta/models/{{model}}:generateContent"
+                try:
+                    generate = gemini.make_generate(api_key=self.KEY, model="test-model", timeout=5)
+                finally:
+                    gemini.API_URL = original
+                with self.assertRaises(gemini.GeminiError) as caught:
+                    generate("지시문", "자료")
+                self.assertNotIn(self.KEY, str(caught.exception))
+                self.assertEqual(received["first"][-1], self.KEY)  # 원래 주소에는 키가 갔다
+                self.assertEqual(received["other"], [])            # 리디렉션된 주소에는 요청 자체가 가지 않았다
+                analysis = read("analysis.json")
+                self.assertEqual(explain_analysis(analysis, generate), explain_analysis(analysis))
+                self.assertEqual(received["other"], [])
+
+    def test_plain_urllib_would_forward_the_key(self):
+        # 이 테스트가 실제로 위험을 잡는지 확인: 기본 urlopen은 키 헤더를 리디렉션 대상에 보낸다.
+        import http.server
+        import urllib.request
+        received = []
+
+        class Other(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                received.append(self.headers.get("x-goog-api-key"))
+                body = json.dumps(model_reply("{}")).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            do_POST = do_GET
+
+            def log_message(self, *args):
+                pass
+
+        other = self.serve(Other)
+
+        class First(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                self.send_response(302)
+                self.send_header("Location", f"http://localhost:{other.server_port}/elsewhere")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        first = self.serve(First)
+        original = gemini.API_URL
+        gemini.API_URL = f"http://127.0.0.1:{first.server_port}/v1beta/models/{{model}}:generateContent"
+        try:
+            unsafe = gemini.make_generate(api_key=self.KEY, model="test-model", timeout=5, opener=urllib.request.urlopen)
+        finally:
+            gemini.API_URL = original
+        unsafe("지시문", "자료")
+        self.assertEqual(received, [self.KEY])
+
+
+class EnvFileTests(unittest.TestCase):
+    def test_load_env_reads_file_without_overriding(self):
+        import os
+        import tempfile
+        names = ("C_TEST_NEW", "C_TEST_EXISTING", "C_TEST_EMPTY", "C_TEST_QUOTED")
+        saved = {name: os.environ.pop(name, None) for name in names}
+        try:
+            os.environ["C_TEST_EXISTING"] = "from-shell"
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / ".env"
+                path.write_text("# 주석\nC_TEST_NEW=from-file\nC_TEST_EXISTING=from-file\nC_TEST_EMPTY=\nC_TEST_QUOTED=\"quoted value\"\nnot a setting\n", encoding="utf-8")
+                loaded = gemini.load_env(path)
+                self.assertEqual(gemini.load_env(Path(tmp) / "missing.env"), [])
+            self.assertEqual(os.environ["C_TEST_NEW"], "from-file")
+            self.assertEqual(os.environ["C_TEST_EXISTING"], "from-shell")
+            self.assertEqual(os.environ["C_TEST_QUOTED"], "quoted value")
+            self.assertNotIn("C_TEST_EMPTY", os.environ)
+            self.assertEqual(loaded, ["C_TEST_NEW", "C_TEST_EXISTING", "C_TEST_QUOTED"])
+        finally:
+            for name, value in saved.items():
+                os.environ.pop(name, None)
+                if value is not None:
+                    os.environ[name] = value
 
 
 if __name__ == "__main__":
