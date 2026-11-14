@@ -1,16 +1,23 @@
-"""Read-only purchase search. Comparison is unavailable until B's engine is connected."""
+"""Read-only purchase search and policy-controlled price comparison."""
 import hashlib
 import json
 import re
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from budget_transparency.ai import gemini
+from budget_transparency.ai.explain import explain_analysis
+from budget_transparency.analysis.compare import ComparisonEngine, AnalysisConfigurationError
+from budget_transparency.analysis.preliminary import preliminary
 
 ROOT = Path(__file__).resolve().parents[3]
-DATA_FILE = ROOT / 'data' / 'demo' / 'purchases.json'
+DATA_FILE = ROOT / 'data' / 'shared' / 'provinces-20251114-20261113' / 'purchases.json'
+MARKET_FILE = DATA_FILE.with_name('market-prices.json')
+POLICY_FILE = ROOT / 'data' / 'demo' / 'comparison-policy.json'
 PERIOD = {'from': '2025-11-14', 'to': '2026-11-13'}  # source dataset coverage, not a comparison period
 class DataError(Exception):
     pass
@@ -44,7 +51,7 @@ def unavailable(record, version, comparison_type):
     return {'contract_version': '1.0', 'dataset_version': version,
             'record_id': record['record_id'], 'comparison_type': comparison_type,
             'synthetic': False, 'status': 'unavailable',
-            'reasons': ['비교 함수와 실제 비교 정책이 연결되지 않아 분석하지 않았습니다.'],
+            'reasons': ['실제 비교 정책이 등록되지 않아 분석하지 않았습니다.'],
             'target': record, 'reference_unit_price': None, 'difference': None,
             'difference_pct': None, 'comparison_records': [], 'excluded_records': [],
             'comparison_count': 0, 'agency_count': 0 if comparison_type == 'agency' else None,
@@ -52,6 +59,36 @@ def unavailable(record, version, comparison_type):
             'policy_id': 'not-configured', 'evidence_ids': [record['record_id']],
             'limitations': ['비교 결과가 아닙니다. 표시된 기간은 원본 자료의 수집 범위입니다.',
                             '계약 상태와 세금·배송·설치 조건은 원본에서 확인되지 않았을 수 있습니다.']}
+
+
+def comparison_context(records, version):
+    """Load a real policy only when explicitly registered; never use the synthetic fixture."""
+    if not POLICY_FILE.exists():
+        return None, [], version
+    try:
+        market_raw = MARKET_FILE.read_bytes()
+        market = json.loads(market_raw)
+        policy_raw = POLICY_FILE.read_bytes()
+        policy = json.loads(policy_raw)
+        if not isinstance(market, list) or any(not isinstance(r, dict) or r.get('synthetic') is not False for r in market):
+            raise DataError('invalid market data')
+        market_ids = [r['market_price_id'] for r in market]
+        if len(set(market_ids)) != len(market_ids):
+            raise DataError('duplicate market ID')
+        combined = hashlib.sha256((version + '\n').encode() + market_raw + b'\n' + policy_raw).hexdigest()
+        version = 'sha256:' + combined
+        return ComparisonEngine(policy, version), market, version
+    except (OSError, ValueError, KeyError, TypeError, AnalysisConfigurationError) as exc:
+        raise DataError('invalid comparison configuration') from exc
+
+
+def analyze(record, records, market, version, kind, engine):
+    if engine is None:
+        return unavailable(record, version, kind)
+    try:
+        return engine.compare_purchase(record['record_id'], records, market, kind)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise DataError('invalid comparison input') from exc
 
 
 def validate_params(request, allowed):
@@ -88,7 +125,7 @@ def comparison(params):
 
 @app.get('/')
 def root():
-    return {'message': '실제 시연 구매 자료 조회 API. 가격 비교 기능은 아직 연결되지 않았습니다.', 'synthetic': False, 'docs': '/docs'}
+    return {'message': '실제 구매 자료 조회 API. 등록된 비교 정책이 있을 때 분석합니다.', 'synthetic': False, 'docs': '/docs'}
 
 
 @app.get('/api/options')
@@ -127,6 +164,7 @@ def purchases(request: Request):
         page = positive_int(p.get('page', '1'))
         page_size = positive_int(p.get('page_size', '20'), 100)
         records, version = load_data()
+        engine, market, version = comparison_context(records, version)
         filtered = []
         for r in records:
             if p.get('agency_id') and r['agency_id'] != p['agency_id']:
@@ -138,16 +176,36 @@ def purchases(request: Request):
             day = r.get('purchased_at')
             if (start or end) and (not day or (start and day < start) or (end and day > end)):
                 continue
-            if status and status != 'unavailable':
-                continue
             filtered.append(r)
         filtered.sort(key=lambda r: r['record_id'])
+        results = {}
+        def result(r):
+            key = r['record_id']
+            if key not in results:
+                results[key] = analyze(r, records, market, version, kind, engine)
+            return results[key]
+
+        if status:
+            if engine is None:
+                if status != 'unavailable':
+                    filtered = []
+            else:
+                # B always returns unavailable when a target is not active.
+                filtered = [r for r in filtered if (status == 'unavailable' if r.get('status') != 'active' else result(r)['status'] == status)]
         if order == 'purchased_desc':
             filtered.sort(key=lambda r: r.get('purchased_at') or '', reverse=True)
+        elif engine is not None:
+            # Non-active targets always have a null difference; keep their ID order.
+            def rank(r):
+                if r.get('status') != 'active':
+                    return (1, Decimal(0))
+                value = result(r)['difference_pct']
+                return (1, Decimal(0)) if value is None else (0, -Decimal(value))
+            filtered.sort(key=rank)
         total = len(filtered)
         selected = filtered[(page - 1) * page_size:page * page_size]
         return {'contract_version': '1.0', 'dataset_version': version, 'synthetic': False,
-                'items': [unavailable(r, version, kind) for r in selected], 'total': total,
+                'items': [result(r) for r in selected], 'total': total,
                 'page': page, 'page_size': page_size}
     except ValueError as exc:
         return error(400, 'INVALID_REQUEST', str(exc))
@@ -161,11 +219,69 @@ def purchase(record_id: str, request: Request):
         p = validate_params(request, {'comparison_type'})
         kind = comparison(p)
         records, version = load_data()
+        engine, market, version = comparison_context(records, version)
         for record in records:
             if record['record_id'] == record_id:
-                return unavailable(record, version, kind)
+                return analyze(record, records, market, version, kind, engine)
         return error(404, 'NOT_FOUND', '구매 기록을 찾을 수 없습니다.')
     except ValueError as exc:
         return error(400, 'INVALID_REQUEST', str(exc))
     except (DataError, OSError, KeyError, TypeError):
         return error(500, 'INTERNAL_ERROR', '데이터를 불러올 수 없습니다.')
+
+
+@app.get('/api/explanations/{record_id:path}')
+def explanation(record_id: str, request: Request):
+    try:
+        p = validate_params(request, {'comparison_type'})
+        kind = comparison(p)
+        records, version = load_data()
+        engine, market, version = comparison_context(records, version)
+        record = next((r for r in records if r['record_id'] == record_id), None)
+        if record is None:
+            return error(404, 'NOT_FOUND', '구매 기록을 찾을 수 없습니다.')
+        analysis = analyze(record, records, market, version, kind, engine)
+        try:
+            gemini.load_env()
+            generate = gemini.make_generate()
+        except (gemini.GeminiError, OSError, UnicodeError):
+            generate = None
+        return explain_analysis(analysis, generate)
+    except ValueError as exc:
+        return error(400, 'INVALID_REQUEST', str(exc))
+    except (DataError, OSError, KeyError, TypeError):
+        return error(500, 'INTERNAL_ERROR', '데이터를 불러올 수 없습니다.')
+
+
+@app.get('/api/preliminary')
+def preliminary_batch(request: Request):
+    try:
+        params = request.query_params
+        if set(params) - {'record_id', 'comparison_type'} or len(params.getlist('comparison_type')) > 1:
+            raise ValueError('요청 조건을 확인해 주세요.')
+        ids = params.getlist('record_id')
+        if not ids or len(ids) > 100 or len(set(ids)) != len(ids) or any(not value or len(value) > 200 for value in ids):
+            raise ValueError('구매 ID는 1~100개여야 합니다.')
+        kind = comparison(params)
+        items = []
+        for record_id in ids:
+            item = preliminary(record_id, kind)
+            if item is not None:
+                items.append({k: v for k, v in item.items() if k not in ('comparison_records', 'limitations')})
+        return {'items': items}
+    except ValueError as exc:
+        return error(400, 'INVALID_REQUEST', str(exc))
+    except (OSError, KeyError, TypeError):
+        return error(500, 'INTERNAL_ERROR', '참고 자료를 불러올 수 없습니다.')
+
+
+@app.get('/api/preliminary/{record_id:path}')
+def preliminary_comparison(record_id: str, request: Request):
+    try:
+        p = validate_params(request, {'comparison_type'})
+        result = preliminary(record_id, comparison(p))
+        return result if result is not None else error(404, 'NOT_FOUND', '구매 기록을 찾을 수 없습니다.')
+    except ValueError as exc:
+        return error(400, 'INVALID_REQUEST', str(exc))
+    except (OSError, KeyError, TypeError):
+        return error(500, 'INTERNAL_ERROR', '참고 자료를 불러올 수 없습니다.')
