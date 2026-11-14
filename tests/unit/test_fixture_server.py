@@ -393,6 +393,11 @@ class PurchaseApiTests(unittest.TestCase):
             _, cached = request('/api/region-report', {'agency_id': '6410000', 'ai': '1'})
         self.assertEqual(ai['mode'], 'ai')
         self.assertEqual(ai['paragraphs'], basic['paragraphs'])
+        self.assertEqual(ai['price_examples'], basic['price_examples'])
+        self.assertLessEqual(len(basic['price_examples']), 3)
+        self.assertTrue(all(float(item['difference_pct']) > 0 for item in basic['price_examples']))
+        self.assertEqual([float(item['difference_pct']) for item in basic['price_examples']],
+                         sorted((float(item['difference_pct']) for item in basic['price_examples']), reverse=True))
         self.assertEqual(ai, cached)
         fake.assert_called_once()
         self.assertIn('품목', ai['checks'][0])
