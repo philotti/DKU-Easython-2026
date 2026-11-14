@@ -38,3 +38,5 @@ jobs:
         run: python -m unittest discover -s tests/unit -p 'test_contract_validation.py' -v
       - name: Test fixture API
         run: python -m unittest discover -s tests/unit -p 'test_fixture_server.py' -v
+      - name: Test AI query and explanation
+        run: python -m unittest discover -s tests/unit -p 'test_ai_validation.py' -v
