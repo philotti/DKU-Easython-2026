@@ -12,14 +12,6 @@ export const agencies = [
   { key: 'chungbuk', name: '충청북도청', region: '충북' },
 ];
 const $ = (id) => document.getElementById(id);
-const jamiePhoto = $('jamie-photo');
-function revealJamie() {
-  if (!jamiePhoto.naturalWidth) return;
-  jamiePhoto.hidden = false;
-  jamiePhoto.previousElementSibling.hidden = true;
-}
-jamiePhoto.addEventListener('load', revealJamie);
-if (jamiePhoto.complete) revealJamie();
 let opener;
 let filter = 'all';
 

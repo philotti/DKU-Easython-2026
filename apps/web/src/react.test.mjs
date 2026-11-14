@@ -12,5 +12,7 @@ test('React page renders province directory, Jamie, filters and preview', async 
     for (const label of ['세금탐지기', '강원특별자치도청', '경기도청', '제이미의 한눈 요약', '자료 출처', '구매 카드 조회', '구매 검색', '데이터 연결']) assert.ok(html.includes(label), label);
     assert.equal((html.match(/class="agency-card"/g) ?? []).length, 9);
     assert.ok(!html.includes('dangerouslySetInnerHTML'));
+    assert.ok(!html.includes('jamie-avatar'));
+    assert.ok(!html.includes('jamie.png'));
   } finally { await server.close(); }
 });
