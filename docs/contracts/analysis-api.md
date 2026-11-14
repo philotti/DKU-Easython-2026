@@ -1,6 +1,6 @@
 # 검색·분석·설명 API v1
 
-담당 E(서버·조회), B(계산), C(AI), D(화면). 내부 서버 계약입니다. 현재 서버는 예제 한 건만 반환하는 초기 버전이며 아래 계약 전체를 구현한 상태가 아닙니다. 구현된 범위는 [서버 안내](../../src/budget_transparency/api/README.md)를 확인하세요. 응답 필드와 타입은 같은 폴더의 JSON Schema가 정본입니다.
+담당 E(서버·조회), B(계산), C(AI), D(화면). 내부 서버 계약입니다. 현재 서버는 실제 시연 구매 18건을 조회하지만 비교 함수와 AI 연결을 포함한 아래 계약 전체를 구현한 상태가 아닙니다. 구현된 범위는 [서버 안내](../../src/budget_transparency/api/README.md)를 확인하세요. 응답 필드와 타입은 같은 폴더의 JSON Schema가 정본입니다.
 
 ## HTTP 경로
 
@@ -43,3 +43,7 @@ evidence_ids는 대상 ID를 먼저, 선택된 비교 기록 ID를 뒤에 나열
 ## 화면 표시와 오류
 
 comparable=비교 가능, insufficient_data=비교 자료 부족, conditions_unknown=조건 확인 필요, unavailable=분석 불가. null은 0이 아닙니다. reasons와 limitations를 상세에서 보여줍니다. AI mode=fallback이면 “기본 안내”를 표시합니다. 오류 메시지에는 키·인증 URL·내부 경로를 넣지 않습니다.
+
+## 비교 함수 연결 전 임시 응답
+
+구매 목록·상세는 `status=unavailable`, 비교 수치 null, `policy_id=not-configured`를 반환합니다. 스키마상 필수인 `comparison_period`는 원본 시연 자료의 수집 범위를 기록하며 실제 비교 기간이 아닙니다. 이 의미는 응답의 limitations와 [서버 안내](../../src/budget_transparency/api/README.md)에 표시합니다. B 함수와 실제 정책을 연결할 때 실제 적용값으로 교체합니다. `dataset_version`은 입력 JSON의 SHA-256입니다.
