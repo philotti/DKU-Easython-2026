@@ -7,7 +7,7 @@
 
 이 저장소는 나라장터 물품 구매 자료를 바탕으로 **기관별 구매 내역 조회 → 가격 비교 → AI 설명 → 원본 근거 확인**을 제공할 웹 서비스를 준비하는 공간입니다.
 
-**현재는 계약 v1, 실제 시연 구매 18행, 합성 예제를 반환하는 초기 서버와 B의 가격 비교 함수가 준비된 상태입니다.** [분석 모듈](src/budget_transparency/analysis/README.md)은 합성 예제로 검증했으며 서버에는 아직 연결하지 않았습니다. 실제 자료는 상태·비용 조건이 미확인이고 실제 비교 정책도 미등록입니다. 웹 화면과 Gemini 연결은 이 브랜치에서 검증하지 않았습니다. 아래 기능과 파일 경로에는 만들 목표도 포함됩니다. 프로젝트 이름, 전체 기술 스택, 실제 행사 시간표는 미확정입니다.
+**현재는 계약 v1, 실제 시연 구매 18건의 검색·조회 서버와 B의 가격 비교 함수가 준비된 상태입니다.** [분석 모듈](src/budget_transparency/analysis/README.md)은 합성 예제로 검증했으며 서버에는 아직 연결하지 않았습니다. 실제 자료는 상태·비용 조건이 미확인이고 실제 비교 정책도 미등록입니다. 웹 화면과 Gemini 연결은 아직 확인되지 않았습니다. 역할별 담당자는 아래 표와 같습니다. 프로젝트 이름과 전체 기술 스택은 미확정입니다.
 
 ## 팀 작업의 필수 규칙
 
@@ -238,7 +238,7 @@ docs/                       계획·역할·계약·화면 명세·검증 기록
 
 ## 11. 개발 환경과 실행 안내
 
-현재 서버는 공통 합성 예제 한 건을 반환합니다. B 비교 함수는 별도 모듈로 구현됐으며 실제 데이터·분석·AI의 서버 연결은 아직 없습니다. B 테스트는 개발 의존성 설치 후 `python3 -m unittest discover -s tests/unit -p test_compare.py -v`로 실행합니다.
+현재 FastAPI 서버는 실제 시연 데이터 18건의 목록·상세·검색·필터를 제공합니다. B의 비교 함수는 별도 모듈로 구현됐지만 서버와 연결되지 않았습니다. React 화면과 AI 연결은 아직 없습니다. B 테스트는 개발 의존성 설치 후 `python3 -m unittest discover -s tests/unit -p test_compare.py -v`로 실행합니다.
 
 | 영역 | 현재 후보·방향 |
 |---|---|
@@ -247,23 +247,23 @@ docs/                       계획·역할·계약·화면 명세·검증 기록
 | 저장 | 초기 JSON 파일 |
 | AI | Gemini API, 모델 ID·사용 조건은 연결 전 확인 |
 
-### 합성 예제 서버 실행 (macOS)
+### 구매 조회 서버 실행 (macOS)
 
 저장소 최상위 폴더에서 다음 명령을 순서대로 실행합니다. Python 3.12 이상이 필요합니다. 첫 설치에는 인터넷이 필요합니다.
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements-server.txt
-.venv/bin/python -m uvicorn budget_transparency.api.server:app --app-dir src --host 127.0.0.1 --port 8000
+.venv/bin/python -m pip install -r requirements-server.txt -r requirements-dev.txt
+.venv/bin/python -m uvicorn budget_transparency.api.server:app --app-dir src --host 127.0.0.1 --port 8000 --reload
 ```
 
 터미널을 켜 둔 상태에서 브라우저로 다음 주소를 엽니다.
 
-- [구매 목록](http://127.0.0.1:8000/api/purchases): 합성 예제 한 건
-- [구매 상세](http://127.0.0.1:8000/api/purchases/demo-A): 같은 예제의 가격 비교 결과
+- [구매 목록](http://127.0.0.1:8000/api/purchases): 실제 시연 구매 자료 18건
+- [기관·물품 선택지](http://127.0.0.1:8000/api/options): 자료에 있는 기관·물품
 - [API 사용 화면](http://127.0.0.1:8000/docs): FastAPI가 제공하는 호출 확인 화면. 화면 리소스를 불러오려면 인터넷이 필요할 수 있습니다.
 
-JSON에 `synthetic: true`가 표시되며 실제 공공기관 기록이 아닙니다. 반환값은 미리 만든 예제 파일이고 실시간 계산 결과가 아닙니다. 검색·필터·시중가 선택·AI·실제 데이터는 아직 구현되지 않았습니다. 서버 종료는 터미널에서 Ctrl+C를 누릅니다. Windows 실행 방법은 [서버 안내](src/budget_transparency/api/README.md)를 봅니다.
+JSON에 `synthetic: false`가 표시되는 실제 시연 자료입니다. 비교 함수와 실제 정책은 아직 연결되지 않아 결과는 `unavailable`, 차액은 `null`입니다. AI 설명과 자연어 검색도 아직 구현되지 않았습니다. 서버 종료는 터미널에서 Ctrl+C를 누릅니다. Windows 실행 방법은 [서버 안내](src/budget_transparency/api/README.md)를 봅니다.
 
 ### 로컬 설정 양식
 
