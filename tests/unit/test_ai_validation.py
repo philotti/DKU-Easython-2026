@@ -147,6 +147,36 @@ class ExplainAiValidationTests(unittest.TestCase):
             with self.subTest(error=type(error).__name__):
                 self.assert_fallback(failing(error))
 
+    def test_price_direction_must_match_calculation(self):
+        # 리뷰 회귀: 대상 단가가 기준보다 높은데 '낮습니다'라고 하면 통과시키지 않는다.
+        def mode(analysis, summary):
+            response = {"summary": summary, "evidence_ids": [analysis["record_id"]], "cautions": []}
+            return explain_analysis(analysis, fake(response))["mode"]
+
+        higher = self.analysis
+        lower = dict(higher, difference="-30000", difference_pct="-25.00")
+        same = dict(higher, difference="0", difference_pct="0.00")
+        cases = [
+            (higher, "기준보다 높습니다.", "ai"),
+            (higher, "기준보다 낮습니다.", "fallback"),
+            (higher, "기준보다 저렴합니다.", "fallback"),
+            (higher, "기준 단가와 같습니다.", "fallback"),
+            (higher, "기준보다 비쌉니다.", "ai"),
+            (lower, "기준보다 낮습니다.", "ai"),
+            (lower, "기준보다 높습니다.", "fallback"),
+            (lower, "기준보다 비쌉니다.", "fallback"),
+            (same, "기준 단가와 같습니다.", "ai"),
+            (same, "기준보다 높습니다.", "fallback"),
+            (read("analysis-insufficient.json"), "기준보다 높습니다.", "fallback"),
+        ]
+        for analysis, summary, expected in cases:
+            with self.subTest(difference=analysis["difference"], summary=summary):
+                self.assertEqual(mode(analysis, summary), expected)
+
+    def test_direction_in_caution_is_checked(self):
+        response = dict(GOOD_EXPLANATION, cautions=["다른 기관보다 저렴한 편입니다."])
+        self.assertEqual(explain_analysis(self.analysis, fake(response))["mode"], "fallback")
+
     def test_numbers_rejected_when_not_comparable(self):
         analysis = read("analysis-insufficient.json")
         response = {"summary": "기준 단가는 120000원입니다.", "evidence_ids": ["demo-other"], "cautions": []}
@@ -201,8 +231,21 @@ class QueryFallbackTests(unittest.TestCase):
     def test_unknown_item_is_not_invented(self):
         result = parse_query("없는 물품 보여줘", OPTIONS)
         QUERY.validate(result)
-        self.assertEqual(result["filters"], {"q": "없는 물품 보여줘", "agency_id": None, "item_id": None, "date_from": None, "date_to": None})
-        self.assertTrue(any("찾지 못해" in w for w in result["warnings"]))
+        self.assertEqual(result["filters"], {"q": "없는 물품", "agency_id": None, "item_id": None, "date_from": None, "date_to": None})
+        self.assertTrue(any("찾지 못한" in w and "없는 물품" in w for w in result["warnings"]))
+
+    def test_unrecognized_word_is_kept_as_search_term(self):
+        # 리뷰 회귀: '노트북'이 조용히 빠져 기관 전체 목록을 노트북 결과로 오해하면 안 된다.
+        result = parse_query("예시기관 A의 노트북", OPTIONS)
+        QUERY.validate(result)
+        self.assertEqual(result["filters"], {"q": "노트북", "agency_id": "agency-A", "item_id": None, "date_from": None, "date_to": None})
+        self.assertTrue(any("노트북" in w for w in result["warnings"]))
+        self.assertEqual(self.parse("예시기관 A의 노트북을 보여줘")["q"], "노트북")
+
+    def test_recognized_question_has_no_search_term(self):
+        for text in ("예시기관 A 구매 내역", "예시기관 A의 예시 물품을 2026-11-01 부터 보여줘"):
+            with self.subTest(text=text):
+                self.assertIsNone(self.parse(text)["q"])
 
     def test_without_options_ids_stay_null(self):
         filters = self.parse("예시기관 A의 예시 물품", options=None)
@@ -252,6 +295,51 @@ class QueryAiValidationTests(unittest.TestCase):
                 QUERY.validate(result)
                 self.assertEqual(result["mode"], "fallback")
                 self.assertNotIn("quota", " ".join(result["warnings"]))
+
+    def test_agency_and_date_not_in_question_fall_back(self):
+        # 리뷰 회귀: 목록에 있는 ID, 질문과 같은 연도라도 질문과 연결되지 않으면 통과시키지 않는다.
+        text = "예시기관 A 2026-11-01"
+        base = {"q": None, "agency_id": "agency-A", "item_id": None, "date_from": "2026-11-01", "date_to": "2026-11-01"}
+        cases = {
+            "other agency and date": dict(base, agency_id="agency-B", date_to="2026-12-31"),
+            "other agency": dict(base, agency_id="agency-B"),
+            "other date": dict(base, date_to="2026-12-31"),
+            "item not mentioned": dict(base, item_id="demo-item-1"),
+        }
+        for label, response in cases.items():
+            with self.subTest(label=label):
+                result = parse_query(text, OPTIONS, fake(response))
+                QUERY.validate(result)
+                self.assertEqual(result["mode"], "fallback")
+                self.assertEqual(result["filters"], base)
+        self.assertEqual(parse_query(text, OPTIONS, fake(base))["mode"], "ai")
+
+    def test_korean_dates_must_match_question(self):
+        text = "예시기관 A 2026년 11월"
+        base = {"q": None, "agency_id": "agency-A", "item_id": None, "date_from": "2026-11-01", "date_to": "2026-11-30"}
+        result = parse_query(text, OPTIONS, fake(base))
+        self.assertEqual((result["mode"], result["warnings"]), ("ai", []))
+        for label, response in {
+            "other month": dict(base, date_from="2026-12-01", date_to="2026-12-31"),
+            "day not in question": dict(base, date_from="2026-11-05"),
+            "other year": dict(base, date_from="2025-11-01"),
+        }.items():
+            with self.subTest(label=label):
+                self.assertEqual(parse_query(text, OPTIONS, fake(response))["mode"], "fallback")
+        whole_year = dict(base, date_from="2026-01-01", date_to="2026-12-31")
+        self.assertEqual(parse_query("예시기관 A 2026년", OPTIONS, fake(whole_year))["mode"], "ai")
+        self.assertEqual(parse_query("예시기관 A 2026년", OPTIONS, fake(base))["mode"], "fallback")
+
+    def test_dropped_word_is_warned_in_ai_mode(self):
+        # 리뷰 회귀: 모델이 '노트북'을 조건에서 빼면 경고한다.
+        text = "예시기관 A의 노트북"
+        base = {"q": None, "agency_id": "agency-A", "item_id": None, "date_from": None, "date_to": None}
+        dropped = parse_query(text, OPTIONS, fake(base))
+        QUERY.validate(dropped)
+        self.assertEqual(dropped["mode"], "ai")
+        self.assertTrue(any("노트북" in w for w in dropped["warnings"]))
+        kept = parse_query(text, OPTIONS, fake(dict(base, q="노트북")))
+        self.assertEqual((kept["mode"], kept["filters"]["q"], kept["warnings"]), ("ai", "노트북", []))
 
     def test_ids_rejected_without_options(self):
         self.assertEqual(parse_query(self.TEXT, None, fake(self.GOOD))["mode"], "fallback")

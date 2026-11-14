@@ -27,6 +27,20 @@ _SAME_PRICE_SUMMARY = "비교 기준 단가와 같습니다. 포함 비용과 �
 _BANNED = ("비리", "부패", "횡령", "불법", "낭비", "절감", "http://", "https://", "www.")
 _NUMBER = re.compile(r"\d+(?:,\d{3})*(?:\.\d+)?")
 _MAGNITUDE = "만억천백조"
+# 가격 방향 표현. 계산 결과와 다른 방향이 하나라도 있으면 통과시키지 않는다(부정문 포함, 보수적).
+_DIRECTION = {
+    "higher": re.compile(r"높|비싸|비쌉|비쌌|초과|웃돌|상회"),
+    "lower": re.compile(r"낮|저렴|(?<!비)(?:싸|쌉|쌌)|밑돌|하회|미만"),
+    "same": re.compile(r"같습니다|같다|동일합니다|동일하다|차이가 없|차이 없|같은 (?:가격|단가)|동일한 (?:가격|단가)"),
+}
+
+
+def _actual_direction(analysis):
+    """대상 단가가 기준보다 높은지·낮은지·같은지. 비교하지 않았으면 None."""
+    if analysis["status"] != "comparable":
+        return None
+    difference = Decimal(analysis["difference"])
+    return "higher" if difference > 0 else "lower" if difference < 0 else "same"
 
 
 def _cautions(analysis, extra=()):
@@ -106,6 +120,10 @@ def _check_text(text, analysis):
             raise ValueError("banned expression")
     for known in _known_strings(analysis):
         text = text.replace(known, " ")
+    actual = _actual_direction(analysis)
+    for direction, pattern in _DIRECTION.items():
+        if direction != actual and pattern.search(text):
+            raise ValueError("price direction contradicts analysis")
     allowed = _allowed_numbers(analysis)
     for match in _NUMBER.finditer(text):
         if text[match.end():match.end() + 1] in _MAGNITUDE and match.end() < len(text):
