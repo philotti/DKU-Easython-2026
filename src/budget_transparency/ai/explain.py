@@ -1,15 +1,20 @@
-"""분석 결과 설명. 모델 응답은 검증을 통과할 때만 쓰고, 아니면 기본 안내를 반환한다.
+"""분석 결과 설명. 요약 문장은 항상 코드가 만든 고정 문장이다.
+
+모델은 '함께 확인할 점'만 쓴다. 가격·숫자·높낮이는 모델이 쓰지 못하게 하고,
+그런 내용이 하나라도 있으면 응답 전체를 버리고 기본 안내를 반환한다.
+가격·차이율·높낮이는 화면이 분석 응답의 값으로 직접 표시한다.
 
 generate는 (system, user) 문자열을 받아 모델의 응답 문자열을 돌려주는 함수다.
-실제 모델 호출 함수는 E와 함께 정한다. 이 모듈은 SDK와 키를 다루지 않는다.
+이 모듈은 SDK와 키를 다루지 않는다.
 """
 import json
 import re
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from . import prompts
 
-SUMMARY_MAX = 300
+CAUTION_MAX = 150
+AI_CAUTIONS_MAX = 3
 SYNTHETIC_CAUTION = "합성 데이터이며 실제 공공기관 분석이 아닙니다."
 
 _FALLBACK_SUMMARY = {
@@ -23,24 +28,17 @@ _COMPARABLE_SUMMARY = {
 }
 _SAME_PRICE_SUMMARY = "비교 기준 단가와 같습니다. 포함 비용과 계약 조건을 함께 확인하세요."
 
-# 단정·절감 표현과 URL은 부정문이어도 통과시키지 않는다(보수적으로 기본 안내로 대체).
+# 모델 문장에 있으면 안 되는 것. 부정문이어도 통과시키지 않는다(보수적으로 기본 안내로 대체).
 _BANNED = ("비리", "부패", "횡령", "불법", "낭비", "절감", "http://", "https://", "www.")
-_NUMBER = re.compile(r"\d+(?:,\d{3})*(?:\.\d+)?")
-_MAGNITUDE = "만억천백조"
-# 가격 방향 표현. 계산 결과와 다른 방향이 하나라도 있으면 통과시키지 않는다(부정문 포함, 보수적).
-_DIRECTION = {
-    "higher": re.compile(r"높|비싸|비쌉|비쌌|초과|웃돌|상회"),
-    "lower": re.compile(r"낮|저렴|(?<!비)(?:싸|쌉|쌌)|밑돌|하회|미만"),
-    "same": re.compile(r"같습니다|같다|동일합니다|동일하다|차이가 없|차이 없|같은 (?:가격|단가)|동일한 (?:가격|단가)"),
-}
-
-
-def _actual_direction(analysis):
-    """대상 단가가 기준보다 높은지·낮은지·같은지. 비교하지 않았으면 None."""
-    if analysis["status"] != "comparable":
-        return None
-    difference = Decimal(analysis["difference"])
-    return "higher" if difference > 0 else "lower" if difference < 0 else "same"
+_KOREAN_MONEY = re.compile(r"[일이삼사오육칠팔구십백천만억조]+\s*원")
+# 가격의 높낮이·크기 비교. 계산 결과와 맞더라도 모델이 쓰지 못한다.
+_COMPARISON = re.compile(
+    r"보다|높|낮|비싸|비쌉|비쌌|싸|쌉|쌌|저렴|초과|미만|이상|이하|웃돌|밑돌|상회|하회|절반"
+    r"|같습니다|같다|동일합니다|동일하다|차이가 없|차이 없"
+    r"|적(?:습|다|은|게|었|어)|많(?:습|다|은|이|았|아)"
+    r"|크(?:다|게)|큽니다|큰 |작(?:습|다|은|게|았|아)"
+    r"|넘(?:습|는|었|어|다)|못 미|더 |덜 "
+)
 
 
 def _cautions(analysis, extra=()):
@@ -66,45 +64,24 @@ def _response(analysis, summary, evidence_ids, cautions, mode):
     }
 
 
-def fallback_explanation(analysis):
-    """AI 없이 상태만으로 만드는 기본 안내. 숫자와 원인을 쓰지 않는다."""
+def fixed_summary(analysis):
+    """상태만으로 정하는 고정 요약. 숫자와 원인을 쓰지 않는다."""
     if analysis["status"] == "comparable":
         if Decimal(analysis["difference"]) == 0:
-            summary = _SAME_PRICE_SUMMARY
-        else:
-            summary = _COMPARABLE_SUMMARY[analysis["comparison_type"]]
-    else:
-        summary = _FALLBACK_SUMMARY.get(analysis["status"], _FALLBACK_SUMMARY["unavailable"])
-    return _response(analysis, summary, list(analysis["evidence_ids"]), _cautions(analysis), "fallback")
+            return _SAME_PRICE_SUMMARY
+        return _COMPARABLE_SUMMARY[analysis["comparison_type"]]
+    return _FALLBACK_SUMMARY.get(analysis["status"], _FALLBACK_SUMMARY["unavailable"])
 
 
-def _allowed_numbers(analysis):
-    target = analysis["target"]
-    values = [
-        analysis["reference_unit_price"],
-        analysis["difference"],
-        analysis["difference_pct"],
-        analysis["comparison_count"],
-        analysis["agency_count"],
-        target["unit_price"],
-        target["quantity"],
-    ]
-    allowed = set()
-    for value in values:
-        if value is None:
-            continue
-        number = Decimal(str(value))
-        allowed.update((number, abs(number)))
-    return allowed
+def fallback_explanation(analysis):
+    """AI 없이 만드는 기본 안내."""
+    return _response(analysis, fixed_summary(analysis), list(analysis["evidence_ids"]), _cautions(analysis), "fallback")
 
 
 def _known_strings(analysis):
+    """숫자가 들어 있을 수 있는 이름·ID. 숫자 검사 전에 문장에서 지운다."""
     target = analysis["target"]
-    period = analysis["comparison_period"] or {}
     known = [
-        target["purchased_at"],
-        period.get("from"),
-        period.get("to"),
         target["model"],
         target["item_name"],
         target["agency_name"],
@@ -115,25 +92,17 @@ def _known_strings(analysis):
 
 
 def _check_text(text, analysis):
+    if len(text) > CAUTION_MAX:
+        raise ValueError("caution too long")
     for word in _BANNED:
         if word in text:
             raise ValueError("banned expression")
     for known in _known_strings(analysis):
         text = text.replace(known, " ")
-    actual = _actual_direction(analysis)
-    for direction, pattern in _DIRECTION.items():
-        if direction != actual and pattern.search(text):
-            raise ValueError("price direction contradicts analysis")
-    allowed = _allowed_numbers(analysis)
-    for match in _NUMBER.finditer(text):
-        if text[match.end():match.end() + 1] in _MAGNITUDE and match.end() < len(text):
-            raise ValueError("unverifiable number")
-        try:
-            number = Decimal(match.group().replace(",", ""))
-        except InvalidOperation:
-            raise ValueError("unverifiable number") from None
-        if number not in allowed:
-            raise ValueError("number not in analysis")
+    if re.search(r"\d", text) or _KOREAN_MONEY.search(text):
+        raise ValueError("numbers are not allowed in AI text")
+    if _COMPARISON.search(text):
+        raise ValueError("price comparison is not allowed in AI text")
 
 
 def _load_json_object(raw):
@@ -156,29 +125,32 @@ def _string_list(value):
 
 
 def validate_explanation(raw, analysis):
-    """모델 응답 문자열을 검증해 계약 형식으로 만든다. 문제가 있으면 ValueError."""
+    """모델 응답 문자열을 검증해 계약 형식으로 만든다. 문제가 있으면 ValueError.
+
+    모델 응답은 {"evidence_ids": [...], "cautions": [...]}만 허용한다. 요약은 받지 않는다.
+    """
     value = _load_json_object(raw)
-    if set(value) != {"summary", "evidence_ids", "cautions"}:
+    if set(value) != {"evidence_ids", "cautions"}:
         raise ValueError("unexpected keys")
-    summary = value["summary"]
-    if not isinstance(summary, str) or not summary.strip() or len(summary) > SUMMARY_MAX:
-        raise ValueError("invalid summary")
-    summary = summary.strip()
     evidence_ids = _string_list(value["evidence_ids"])
     if not evidence_ids or len(evidence_ids) != len(set(evidence_ids)):
         raise ValueError("invalid evidence ids")
     if not set(evidence_ids) <= set(analysis["evidence_ids"]):
         raise ValueError("unknown evidence id")
     cautions = _string_list(value["cautions"])
-    for text in [summary, *cautions]:
+    if not 1 <= len(cautions) <= AI_CAUTIONS_MAX:
+        raise ValueError("invalid caution count")
+    for text in cautions:
         _check_text(text, analysis)
-    return _response(analysis, summary, evidence_ids, _cautions(analysis, cautions), "ai")
+    return _response(analysis, fixed_summary(analysis), evidence_ids, _cautions(analysis, cautions), "ai")
 
 
 def explain_analysis(analysis, generate=None):
     """analysis.schema.json 형식의 분석 결과를 explanation.schema.json 형식으로 설명한다.
 
-    generate가 없거나, 호출이 실패하거나, 응답이 검증을 통과하지 못하면 mode=fallback.
+    summary는 두 mode 모두 코드가 만든 고정 문장이다. mode=ai이면 cautions에
+    검증을 통과한 모델의 확인 사항이 더해진다. generate가 없거나, 호출이 실패하거나,
+    응답이 검증을 통과하지 못하면 mode=fallback.
     """
     fallback = fallback_explanation(analysis)
     if generate is None:
