@@ -36,6 +36,11 @@ def validator(name):
 EXPLANATION = validator("explanation.schema.json")
 QUERY = validator("query.schema.json")
 OPTIONS = read("options.json")
+# 실제 시연 데이터처럼 같은 품목명에 ID가 여러 개인 경우(합성).
+DUP_OPTIONS = {
+    "agencies": OPTIONS["agencies"],
+    "items": OPTIONS["items"] + [{"id": f"dup-{n}", "name": "중복 품목"} for n in (1, 2, 3)],
+}
 
 
 def fake(response):
@@ -268,6 +273,26 @@ class QueryFallbackTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIsNone(self.parse(text)["q"])
 
+    def test_same_item_name_with_many_ids_becomes_search_term(self):
+        # 리뷰 회귀: 같은 품목명에 ID가 여러 개면 하나를 고르지 않고 이름을 검색어로 넘긴다.
+        result = parse_query("예시기관 A의 중복 품목", DUP_OPTIONS)
+        QUERY.validate(result)
+        self.assertEqual(result["filters"], {"q": "중복 품목", "agency_id": "agency-A", "item_id": None, "date_from": None, "date_to": None})
+        self.assertTrue(any("중복 품목" in w and "여러 품목이 검색될 수 있습니다" in w for w in result["warnings"]))
+        self.assertFalse(any("찾지 못한" in w for w in result["warnings"]))
+        self.assertEqual(self.parse("중복품목 보여줘", DUP_OPTIONS)["q"], "중복 품목")
+
+    def test_same_item_name_keeps_other_conditions(self):
+        filters = self.parse("예시기관 A의 중복 품목 2026-11-01 부터", DUP_OPTIONS)
+        self.assertEqual(filters, {"q": "중복 품목", "agency_id": "agency-A", "item_id": None, "date_from": "2026-11-01", "date_to": None})
+        with_word = self.parse("예시기관 A의 중복 품목 흑백", DUP_OPTIONS)
+        self.assertEqual((with_word["item_id"], with_word["q"]), (None, "중복 품목 흑백"))
+
+    def test_unique_names_still_resolve_to_ids(self):
+        filters = self.parse("예시기관 A의 예시 물품", DUP_OPTIONS)
+        self.assertEqual((filters["agency_id"], filters["item_id"], filters["q"]), ("agency-A", "demo-item-1", None))
+        self.assertEqual(self.parse("dup-2 보여줘", DUP_OPTIONS)["item_id"], "dup-2")  # ID를 직접 쓴 경우
+
     def test_without_options_ids_stay_null(self):
         filters = self.parse("예시기관 A의 예시 물품", options=None)
         self.assertEqual((filters["agency_id"], filters["item_id"]), (None, None))
@@ -361,6 +386,33 @@ class QueryAiValidationTests(unittest.TestCase):
         self.assertTrue(any("노트북" in w for w in dropped["warnings"]))
         kept = parse_query(text, OPTIONS, fake(dict(base, q="노트북")))
         self.assertEqual((kept["mode"], kept["filters"]["q"], kept["warnings"]), ("ai", "노트북", []))
+
+    def test_model_cannot_pick_one_of_same_named_items(self):
+        # 리뷰 회귀: 모델이 같은 이름의 ID 중 하나를 고르거나 이름을 빼면 기본 규칙으로 대체한다.
+        text = "예시기관 A의 중복 품목"
+        expected = {"q": "중복 품목", "agency_id": "agency-A", "item_id": None, "date_from": None, "date_to": None}
+        for label, response in {
+            "picked one id": dict(expected, q=None, item_id="dup-1"),
+            "picked id and q": dict(expected, item_id="dup-2"),
+            "dropped name": dict(expected, q=None),
+        }.items():
+            with self.subTest(label=label):
+                result = parse_query(text, DUP_OPTIONS, fake(response))
+                QUERY.validate(result)
+                self.assertEqual((result["mode"], result["filters"]), ("fallback", expected))
+                self.assertTrue(any("여러 품목이 검색될 수 있습니다" in w for w in result["warnings"]))
+        result = parse_query(text, DUP_OPTIONS, fake(expected))
+        QUERY.validate(result)
+        self.assertEqual((result["mode"], result["filters"]), ("ai", expected))
+        # 리뷰 회귀: 모델이 올바르게 답한 AI 경로에서도 같은 경고를 표시한다.
+        self.assertEqual(result["warnings"], ["‘중복 품목’ 이름의 품목이 여러 개라 하나로 정하지 않고 검색어로 사용했습니다. 여러 품목이 검색될 수 있습니다."])
+        fallback = parse_query(text, DUP_OPTIONS)
+        self.assertIn(result["warnings"][0], fallback["warnings"])
+
+    def test_no_same_name_warning_for_unique_item_in_ai_mode(self):
+        response = {"q": None, "agency_id": "agency-A", "item_id": "demo-item-1", "date_from": None, "date_to": None}
+        result = parse_query("예시기관 A의 예시 물품", DUP_OPTIONS, fake(response))
+        self.assertEqual((result["mode"], result["warnings"]), ("ai", []))
 
     def test_ids_rejected_without_options(self):
         self.assertEqual(parse_query(self.TEXT, None, fake(self.GOOD))["mode"], "fallback")
