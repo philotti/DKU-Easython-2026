@@ -59,7 +59,7 @@
 
 ## 파일과 재검사
 
-연간 정제본·원본은 저장소의 `data/processed/`와 `data/raw/` 아래 `provinces-20251114-20261113/`에 있다. 저장소의 Git 제외 규칙이 적용되므로 팀원에게 전체 데이터가 필요하면 정제본과 행별 근거를 따로 전달해야 한다. 공유용 시연 구매와 시중가 파일은 각각 `data/demo/purchases.json`과 `data/demo/market-prices.json`이다. 이번 수집에서 같은 모델의 독립 소매 가격을 확인하지 않아 시중가 배열은 비어 있다.
+연간 정제본·원본은 저장소의 `data/processed/`와 `data/raw/` 아래 `provinces-20251114-20261113/`에 있다. 팀원은 [연간 구매 정제본과 행별 근거 ZIP](../../data/shared/provinces-20251114-20261113.zip)을 내려받아 압축을 풀 수 있다. `purchases.json`은 연간 구매 품목 22,987행, `purchase-sources.json`은 같은 22,987행의 근거다. 두 파일은 `record_id`로 연결하며 해시는 아래 표와 같다. API 원본 응답은 로컬에 보관한다. 공유용 시연 구매와 시중가 파일은 각각 `data/demo/purchases.json`과 `data/demo/market-prices.json`이다. 이번 수집에서 같은 모델의 독립 소매 가격을 확인하지 않아 시중가 배열은 비어 있다.
 
 | 로컬 파일 | SHA-256 |
 |---|---|
