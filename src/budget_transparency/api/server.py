@@ -1,5 +1,7 @@
 """Local fixture-only API. All returned purchase data is synthetic."""
 import json
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -32,22 +34,75 @@ def root():
 
 @app.get("/api/options")
 def options():
-    # Only the record with an implemented detail response is offered for now.
-    return {"agencies": [{"id": "agency-A", "name": "예시기관 A"}],
-            "items": [{"id": "demo-item-1", "name": "예시 물품"}]}
+    records = examples("agency")
+    return {key: [{"id": value, "name": name} for value, name in
+                  dict((a["target"][f"{field}_id"], a["target"][f"{field}_name"]) for a in records).items()]
+            for key, field in (("agencies", "agency"), ("items", "item"))}
+
+
+def examples(comparison_type):
+    names = ["analysis.json", "analysis-insufficient.json", "analysis-unknown.json"] if comparison_type == "agency" else ["analysis-market.json"]
+    return [fixture(name) for name in names]
+
+
+def parameters(request, allowed):
+    if any(key not in allowed for key in request.query_params):
+        raise ValueError("unsupported field")
+    if any(len(request.query_params.getlist(key)) != 1 for key in request.query_params):
+        raise ValueError("duplicate field")
+    params = dict(request.query_params)
+    if params.get("comparison_type", "agency") not in ("agency", "market"):
+        raise ValueError("invalid comparison type")
+    return params
 
 
 @app.get("/api/purchases")
 def purchases(request: Request):
-    if request.query_params:
-        return error(400, "INVALID_REQUEST", "검색·필터는 아직 지원하지 않습니다.")
-    return fixture("list.json")
+    try:
+        params = parameters(request, {"q", "agency_id", "item_id", "comparison_type", "status", "sort", "page", "page_size", "date_from", "date_to"})
+        query = params.get("q", "").strip().casefold()
+        if len(query) > 200:
+            raise ValueError("query too long")
+        status = params.get("status")
+        if status is not None and status not in {"comparable", "insufficient_data", "conditions_unknown", "unavailable"}:
+            raise ValueError("invalid status")
+        sort = params.get("sort", "purchased_desc")
+        if sort not in {"purchased_desc", "difference_pct_desc"} or (sort == "difference_pct_desc" and not params.get("item_id")):
+            raise ValueError("invalid sort")
+        page, size = int(params.get("page", "1")), int(params.get("page_size", "20"))
+        if page < 1 or not 1 <= size <= 100:
+            raise ValueError("invalid page")
+        start, end = params.get("date_from"), params.get("date_to")
+        for value in (start, end):
+            if value and date.fromisoformat(value).isoformat() != value:
+                raise ValueError("invalid date")
+        if start and end and start > end:
+            raise ValueError("reversed dates")
+        records = examples(params.get("comparison_type", "agency"))
+        records = [a for a in records if
+                   (not query or any(query in str(a["target"].get(key) or "").casefold() for key in ("item_name", "model", "agency_name")))
+                   and all(not params.get(f"{field}_id") or a["target"][f"{field}_id"] == params[f"{field}_id"] for field in ("agency", "item"))
+                   and (not status or a["status"] == status)
+                   and (not start or (a["target"]["purchased_at"] and a["target"]["purchased_at"] >= start))
+                   and (not end or (a["target"]["purchased_at"] and a["target"]["purchased_at"] <= end))]
+        records.sort(key=lambda a: a["record_id"])
+        if sort == "difference_pct_desc":
+            records.sort(key=lambda a: (a["difference_pct"] is None, -Decimal(a["difference_pct"] or "0")))
+        else:
+            records.sort(key=lambda a: a["target"]["purchased_at"] or "", reverse=True)
+        return {"contract_version": "1.0", "dataset_version": "synthetic-v1", "synthetic": True,
+                "items": records[(page - 1) * size:page * size], "total": len(records), "page": page, "page_size": size}
+    except (ValueError, TypeError):
+        return error(400, "INVALID_REQUEST", "검색 조건·날짜·정렬 또는 페이지 값을 확인하세요.")
 
 
 @app.get("/api/purchases/{record_id}")
 def purchase(record_id: str, request: Request):
-    if request.query_params:
-        return error(400, "INVALID_REQUEST", "비교 유형 선택은 아직 지원하지 않습니다.")
-    if record_id != "demo-A":
-        return error(404, "NOT_FOUND", "구매 기록을 찾을 수 없습니다.")
-    return fixture("analysis.json")
+    try:
+        params = parameters(request, {"comparison_type"})
+    except ValueError:
+        return error(400, "INVALID_REQUEST", "비교 유형을 확인하세요.")
+    for analysis in examples(params.get("comparison_type", "agency")):
+        if analysis["record_id"] == record_id:
+            return analysis
+    return error(404, "NOT_FOUND", "해당 비교 유형의 구매 기록을 찾을 수 없습니다.")
